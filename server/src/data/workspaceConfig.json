@@ -1,0 +1,10 @@
+{
+  "repoPath": "c:\\repo101",
+  "isAuthorized": true,
+  "authorizedAt": "2026-09-29T08:53:18.934Z",
+  "permissions": {
+    "createDirectories": true,
+    "writeFiles": true,
+    "readFiles": true
+  }
+}

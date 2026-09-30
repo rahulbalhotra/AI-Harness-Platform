@@ -1,0 +1,12 @@
+{
+  "google": "AIzaSyBaEbtyYdGa-ZB3eRRFgOFkLSuSHao7Kg8",
+  "anthropic": "",
+  "openai": "",
+  "deepseek": "",
+  "azureOpenAI": {
+    "key": "",
+    "endpoint": "",
+    "deployment": "",
+    "apiVersion": "2024-08-01-preview"
+  }
+}

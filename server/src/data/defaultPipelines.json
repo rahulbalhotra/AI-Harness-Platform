@@ -1,0 +1,80 @@
+[
+  {
+    "id": "pipeline-feature-lifecycle",
+    "name": "Full Feature SDLC Lifecycle",
+    "description": "End-to-end SDLC pipeline: Architecture Spec -> Implementation -> QA Test Generation -> Security Audit -> PR Review.",
+    "stages": [
+      {
+        "id": "stage-spec",
+        "name": "Architecture & Spec",
+        "agentId": "agent-architect",
+        "inputVar": "featurePrompt",
+        "outputVar": "specDocument",
+        "description": "Architect writes technical design document and API contract."
+      },
+      {
+        "id": "stage-code",
+        "name": "Code Implementation",
+        "agentId": "agent-senior-engineer",
+        "inputVar": "specDocument",
+        "outputVar": "codeChanges",
+        "description": "Engineer writes source code based on architecture specifications."
+      },
+      {
+        "id": "stage-test",
+        "name": "Unit & Integration Tests",
+        "agentId": "agent-qa-synthesizer",
+        "inputVar": "codeChanges",
+        "outputVar": "testResults",
+        "description": "QA Synthesizer generates unit tests and runs verification suites."
+      },
+      {
+        "id": "stage-sec",
+        "name": "Security Audit",
+        "agentId": "agent-secops-auditor",
+        "inputVar": "codeChanges",
+        "outputVar": "securityReport",
+        "description": "SecOps scans code for vulnerabilities, OWASP issues, and secrets."
+      },
+      {
+        "id": "stage-review",
+        "name": "Final PR Review",
+        "agentId": "agent-pr-reviewer",
+        "inputVar": "securityReport",
+        "outputVar": "prDecision",
+        "description": "Reviewer signs off with release approval or feedback."
+      }
+    ]
+  },
+  {
+    "id": "pipeline-security-hotfix",
+    "name": "Vulnerability Triage & Auto-Patch",
+    "description": "Rapid triage pipeline: SecOps discovers flaw -> Engineer authors patch -> QA verifies fix with regression tests.",
+    "stages": [
+      {
+        "id": "stage-audit",
+        "name": "Vulnerability Scan",
+        "agentId": "agent-secops-auditor",
+        "inputVar": "repoTarget",
+        "outputVar": "vulnerabilityList",
+        "description": "AppSec detects high/critical vulnerabilities."
+      },
+      {
+        "id": "stage-patch",
+        "name": "Automated Patch Authoring",
+        "agentId": "agent-senior-engineer",
+        "inputVar": "vulnerabilityList",
+        "outputVar": "patchDiff",
+        "description": "Engineer generates surgical patch without breaking API."
+      },
+      {
+        "id": "stage-qa",
+        "name": "Regression Verification",
+        "agentId": "agent-qa-synthesizer",
+        "inputVar": "patchDiff",
+        "outputVar": "verificationSummary",
+        "description": "QA executes test suite to guarantee regression-free patch."
+      }
+    ]
+  }
+]

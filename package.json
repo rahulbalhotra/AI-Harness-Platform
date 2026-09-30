@@ -1,0 +1,29 @@
+{
+  "name": "enterprise-ai-harness-engine",
+  "version": "1.0.0",
+  "description": "Enterprise AI Harness Platform for SDLC",
+  "main": "server/src/index.js",
+  "scripts": {
+    "server": "node server/src/index.js",
+    "client": "npm --prefix client run dev",
+    "build:client": "npm --prefix client run build"
+  },
+  "keywords": [
+    "ai-harness",
+    "sdlc",
+    "antigravity",
+    "agents",
+    "mcp",
+    "llm-orchestrator"
+  ],
+  "author": "Enterprise AI Harness Team",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.23.0",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.1"
+  }
+}
