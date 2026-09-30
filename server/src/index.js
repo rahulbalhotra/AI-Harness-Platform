@@ -60,6 +60,10 @@ const agentRuntime = new AgentRuntime(
 );
 const sdlcOrchestrator = new SDLCOrchestrator(agentRuntime, agentFactory);
 
+const ProjectManager = require('./engine/ProjectManager');
+const projectManager = new ProjectManager(db, toolRegistry);
+agentRuntime.setProjectManager(projectManager);
+
 // Auto-seed default workspace documents into RAG on startup
 setTimeout(async () => {
   try {
@@ -92,7 +96,8 @@ app.use('/api', apiRoutes(
   mcpManager,
   broadcast,
   db,
-  knowledgeBaseManager
+  knowledgeBaseManager,
+  projectManager
 ));
 
 // Serve static frontend build if present
@@ -143,6 +148,9 @@ agentRuntime.on('parallel_agent_completed', (data) => broadcast('PARALLEL_AGENT_
 agentRuntime.on('autogen_swarm_completed', (data) => broadcast('AUTOGEN_SWARM_COMPLETED', data));
 agentRuntime.on('execution_resumed', (data) => broadcast('EXECUTION_RESUMED', data));
 agentRuntime.on('rag_context_injected', (data) => broadcast('RAG_CONTEXT_INJECTED', data));
+agentRuntime.on('knowledge_doc_ingested', (data) => broadcast('KNOWLEDGE_DOC_INGESTED', data));
+agentRuntime.on('model_routed', (data) => broadcast('MODEL_ROUTED', data));
+agentRuntime.on('model_retry', (data) => broadcast('MODEL_RETRY', data));
 agentRuntime.on('execution_completed', (data) => broadcast('EXECUTION_COMPLETED', data));
 agentRuntime.on('execution_failed', (data) => broadcast('EXECUTION_FAILED', data));
 

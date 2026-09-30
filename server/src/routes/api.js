@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 
-module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEngine, agentRuntime, sdlcOrchestrator, mcpManager, broadcast, db = null, knowledgeBaseManager = null) {
+module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEngine, agentRuntime, sdlcOrchestrator, mcpManager, broadcast, db = null, knowledgeBaseManager = null, projectManager = null) {
 
   // ===================== AUTHENTICATION & ACCESS CONTROL =====================
   router.post('/auth/login', async (req, res) => {
@@ -170,6 +170,45 @@ module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEng
     res.json(modelRouter.getAllModels());
   });
 
+  router.get('/models/active', (req, res) => {
+    const { agentId, preferredModelId } = req.query;
+    let pref = preferredModelId || null;
+    if (!pref && agentId) {
+      const ag = agentFactory.getAgent(agentId);
+      if (ag) pref = ag.modelId;
+    }
+    res.json(modelRouter.getRoutingStatus(pref));
+  });
+
+  router.post('/models/active', (req, res) => {
+    try {
+      const { modelId, agentId } = req.body;
+      const activeModel = modelRouter.setActiveModel(modelId || 'auto');
+      if (agentId && activeModel?.id) {
+        const ag = agentFactory.getAgent(agentId);
+        if (ag) {
+          agentFactory.updateAgent(agentId, { modelId: activeModel.id }, governanceEngine.getActiveUser());
+        }
+      }
+      const status = modelRouter.getRoutingStatus(modelId === 'auto' ? null : modelId);
+      if (typeof broadcast === 'function') {
+        broadcast('ACTIVE_MODEL_UPDATED', status);
+      }
+      res.json(status);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.post('/models/retry-policy', (req, res) => {
+    try {
+      const policy = modelRouter.updateRetryPolicy(req.body || {});
+      res.json({ success: true, retryPolicy: policy });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   router.post('/models', (req, res) => {
     try {
       const registered = modelRouter.registerModel(req.body);
@@ -179,15 +218,35 @@ module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEng
     }
   });
 
+  router.put('/models/:id', (req, res) => {
+    try {
+      const updated = modelRouter.updateModel(req.params.id, req.body || {});
+      if (typeof broadcast === 'function') {
+        broadcast('MODEL_UPDATED', updated);
+        broadcast('ACTIVE_MODEL_UPDATED', modelRouter.getRoutingStatus());
+      }
+      res.json(updated);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   router.put('/models/:id/toggle', (req, res) => {
     const updated = modelRouter.toggleModel(req.params.id, req.body.enabled);
     if (!updated) return res.status(404).json({ error: 'Model not found' });
+    if (typeof broadcast === 'function') {
+      broadcast('MODEL_UPDATED', updated);
+      broadcast('ACTIVE_MODEL_UPDATED', modelRouter.getRoutingStatus());
+    }
     res.json(updated);
   });
 
   router.delete('/models/:id', (req, res) => {
     const success = modelRouter.removeModel(req.params.id);
     if (!success) return res.status(404).json({ error: 'Model not found' });
+    if (typeof broadcast === 'function') {
+      broadcast('ACTIVE_MODEL_UPDATED', modelRouter.getRoutingStatus());
+    }
     res.json({ success: true });
   });
 
@@ -619,6 +678,50 @@ module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEng
     }
   });
 
+  router.get('/knowledge/documents/:id', async (req, res) => {
+    try {
+      if (!knowledgeBaseManager) return res.status(503).json({ error: 'RAG engine not initialized' });
+      const doc = await knowledgeBaseManager.getDocumentWithContent(req.params.id);
+      if (!doc) return res.status(404).json({ error: 'Document not found' });
+      res.json(doc);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/knowledge/upload', async (req, res) => {
+    try {
+      if (!knowledgeBaseManager) return res.status(503).json({ error: 'RAG engine not initialized' });
+      const { files, tags } = req.body;
+      const items = Array.isArray(files) ? files : [req.body];
+      if (!items || items.length === 0) {
+        return res.status(400).json({ error: 'At least one file payload is required' });
+      }
+      const results = [];
+      for (const item of items) {
+        const ingested = await knowledgeBaseManager.ingestUploadedDocument({
+          fileName: item.fileName || item.name || 'uploaded_document.txt',
+          mimeType: item.mimeType || item.type || '',
+          base64Data: item.base64Data || item.dataUrl || '',
+          textContent: item.textContent || item.content || '',
+          title: item.title || item.fileName || item.name,
+          tags: item.tags || tags || []
+        });
+        results.push(ingested);
+        if (typeof broadcast === 'function') {
+          broadcast('KNOWLEDGE_DOC_INGESTED', { document: ingested.document, chunkCount: ingested.chunkCount });
+        }
+      }
+      res.status(201).json({
+        success: true,
+        ingestedCount: results.length,
+        results
+      });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   router.delete('/knowledge/documents/:id', async (req, res) => {
     try {
       if (!db) return res.status(503).json({ error: 'Database not initialized' });
@@ -685,5 +788,217 @@ module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEng
     }
   });
 
+  // ===================== PROJECT MANAGEMENT (JIRA-STYLE) =====================
+  router.get('/pm/projects', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const projects = await projectManager.getAllProjects();
+      res.json(projects);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/pm/projects/:id', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const project = await projectManager.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: 'Project not found' });
+      res.json(project);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/pm/projects', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const created = await projectManager.createProject(req.body);
+      if (typeof broadcast === 'function') {
+        broadcast('PROJECT_UPDATED', { action: 'created', project: created });
+      }
+      res.status(201).json(created);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.put('/pm/projects/:id', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const updated = await projectManager.updateProject(req.params.id, req.body);
+      if (typeof broadcast === 'function') {
+        broadcast('PROJECT_UPDATED', { action: 'updated', project: updated });
+      }
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/pm/stories', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const { projectId, agentId } = req.query;
+      let stories = await projectManager.getStories(projectId || null);
+      if (agentId) {
+        stories = stories.filter(s => s.assignedAgentId === agentId);
+      }
+      res.json(stories);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/pm/stories', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const created = await projectManager.createStory(req.body);
+      if (typeof broadcast === 'function') {
+        broadcast('STORY_UPDATED', { action: 'created', story: created });
+      }
+      res.status(201).json(created);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.put('/pm/stories/:id', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const updated = await projectManager.updateStory(req.params.id, req.body);
+      if (typeof broadcast === 'function') {
+        broadcast('STORY_UPDATED', { action: 'updated', story: updated });
+      }
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/pm/stories/:id/transition', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const { status, agentId, comment } = req.body;
+      const existing = await projectManager.getStories();
+      const story = existing.find(s => s.id === req.params.id);
+      if (!story) return res.status(404).json({ error: 'Story not found' });
+
+      const logText = comment || `Status moved to '${status.toUpperCase()}'${agentId ? ` by ${agentId}` : ''}`;
+      const updated = await projectManager.updateStory(story.id, {
+        status,
+        activityLog: [
+          ...(story.activityLog || []),
+          { timestamp: new Date().toISOString(), text: logText }
+        ]
+      });
+
+      if (typeof broadcast === 'function') {
+        broadcast('STORY_UPDATED', { action: 'transitioned', story: updated });
+      }
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/pm/stories/:id', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      await projectManager.deleteStory(req.params.id);
+      if (typeof broadcast === 'function') {
+        broadcast('STORY_UPDATED', { action: 'deleted', id: req.params.id });
+      }
+      res.json({ success: true, id: req.params.id });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Agent generates user stories autonomously for a project
+  router.post('/pm/generate-stories', async (req, res) => {
+    try {
+      if (!projectManager) return res.status(503).json({ error: 'ProjectManager not initialized' });
+      const { projectId, prompt } = req.body;
+      const project = await projectManager.getProject(projectId || 'proj_amazon_clone');
+      if (!project) return res.status(404).json({ error: 'Project not found' });
+
+      // Build generation prompt for architect / researcher
+      const planText = project.plan ? JSON.stringify(project.plan.phases || []) : '';
+      const brdText = project.brd ? project.brd.executiveSummary || '' : '';
+
+      const systemPrompt = `You are an Agile Enterprise Lead Architect and Scrum Master. Given a project, BRD, and project plan, break it down into 3-5 structured Jira-like User Stories.
+Respond ONLY with a valid JSON array of objects with the following format:
+[
+  {
+    "title": "Story Title",
+    "description": "As a [user], I want [feature] so that [benefit]. Acceptance Criteria: 1... 2...",
+    "type": "story", // or "task" or "bug"
+    "priority": "highest" // or "high", "medium", "low"
+    "assignedAgentId": "agent-senior-engineer", // or agent-researcher, agent-architect, agent-qa-synthesizer, agent-secops-auditor, agent-devops-sre
+    "assignedAgentName": "Full-Stack Senior Engineer",
+    "avatar": "💻",
+    "storyPoints": 5,
+    "targetFiles": ["file1.js"]
+  }
+]`;
+
+      const userContent = `Project: ${project.name}
+Description: ${project.description}
+BRD Summary: ${brdText}
+Project Plan Phases: ${planText}
+User Instructions: ${prompt || 'Generate next sprint user stories'}`;
+
+      let storiesData = [];
+      try {
+        const response = await modelRouter.routeAndCall({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent }
+          ],
+          preferredModel: 'gemini-2.5-flash',
+          purpose: 'project_story_generation'
+        });
+
+        const raw = response.content.replace(/```json/gi, '').replace(/```/g, '').trim();
+        storiesData = JSON.parse(raw);
+      } catch (genErr) {
+        console.warn('AI generation fallback for stories:', genErr.message);
+        // Fallback default story
+        storiesData = [
+          {
+            title: `Implement ${prompt || 'Core Module Enhancements'}`,
+            description: `Deliver core capabilities as defined in the ${project.name} business requirements.`,
+            type: 'story',
+            priority: 'high',
+            assignedAgentId: 'agent-senior-engineer',
+            assignedAgentName: 'Full-Stack Senior Engineer',
+            avatar: '💻',
+            storyPoints: 5,
+            targetFiles: ['src/core/']
+          }
+        ];
+      }
+
+      const createdStories = [];
+      if (Array.isArray(storiesData)) {
+        for (const s of storiesData) {
+          s.projectId = project.id;
+          const created = await projectManager.createStory(s);
+          createdStories.push(created);
+        }
+      }
+
+      if (typeof broadcast === 'function') {
+        broadcast('STORY_UPDATED', { action: 'batch_created', stories: createdStories });
+      }
+
+      res.status(201).json({ success: true, count: createdStories.length, stories: createdStories });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return router;
 };
+

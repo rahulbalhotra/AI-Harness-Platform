@@ -571,17 +571,49 @@ class ToolRegistry {
     if (!this.knowledgeBaseManager) {
       throw new Error('Knowledge Base Manager is not initialized.');
     }
+    const title = params.title || 'Architecture & Product Specification';
+    const content = params.content || '';
+    const tags = Array.isArray(params.tags) ? params.tags : ['prd', 'architecture', 'research'];
+    const source = params.source || params.filePath || 'agent-researcher';
+
+    let savedFilePath = null;
+    if (this.isAuthorized && (params.filePath || params.saveToRepo !== false)) {
+      try {
+        const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 50) || 'architecture-prd';
+        const relFilePath = params.filePath || `docs/${slug}.md`;
+        await this.execWriteFile({
+          filePath: relFilePath,
+          content,
+          sessionId: params.sessionId,
+          agentId: params.agentId || 'agent-researcher'
+        });
+        savedFilePath = relFilePath;
+      } catch (e) {
+        console.warn('[ToolRegistry] Could not write spec file to repo:', e.message);
+      }
+    }
+
     const res = await this.knowledgeBaseManager.ingestDocument({
-      title: params.title,
-      content: params.content,
-      tags: params.tags || [],
-      source: params.source || 'agent'
+      title,
+      content,
+      tags,
+      source: savedFilePath || source,
+      sourceType: params.sourceType || 'prd_architecture',
+      metadata: {
+        ...(params.metadata || {}),
+        savedFilePath,
+        ingestedByAgent: params.agentId || 'agent-researcher',
+        ingestedAt: new Date().toISOString()
+      }
     });
     return {
       status: 'success',
       documentId: res.document.id,
       title: res.document.title,
-      chunkCount: res.chunkCount
+      chunkCount: res.chunkCount,
+      tags,
+      savedFilePath,
+      summary: `Ingested "${res.document.title}" into Knowledge Hub (${res.chunkCount} semantic chunks indexed)${savedFilePath ? ` and saved to ${savedFilePath}` : ''}.`
     };
   }
 

@@ -7,10 +7,11 @@ import {
   GitMerge, 
   FolderTree, 
   ShieldCheck, 
-  Sparkles,
-  Settings,
-  BookOpen,
-  Database
+  Sparkles, 
+  Settings, 
+  BookOpen, 
+  Database,
+  Kanban
 } from 'lucide-react';
 
 export default function ActivityBar({ 
@@ -22,12 +23,13 @@ export default function ActivityBar({
 }) {
   const navItems = [
     { id: 'chat', label: 'Agent Studio & Pair Chat', icon: MessageSquare },
+    { id: 'pm', label: 'Project Management & Jira Board', icon: Kanban },
     { id: 'agents', label: 'Agent Hub & Creator', icon: Bot },
-    { id: 'models', label: 'Model Hub & Router', icon: Cpu },
+    { id: 'pipelines', label: 'SDLC Multi-Agent Pipelines', icon: GitMerge },
     { id: 'knowledge', label: 'Knowledge Base & RAG', icon: BookOpen },
     { id: 'database', label: 'PostgreSQL & Versioning', icon: Database },
+    { id: 'models', label: 'Model Hub & Router', icon: Cpu },
     { id: 'tools', label: 'Tools & MCP Registry', icon: Wrench },
-    { id: 'pipelines', label: 'SDLC Multi-Agent Pipelines', icon: GitMerge },
     { id: 'explorer', label: 'Workspace & Code Canvas', icon: FolderTree },
     { 
       id: 'governance', 

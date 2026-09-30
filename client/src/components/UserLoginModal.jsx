@@ -124,8 +124,8 @@ export default function UserLoginModal({ currentUser, onUserChanged, onClose }) 
   };
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 1000 }}>
-      <div className="modal-card" style={{ maxWidth: '620px', width: '92%', padding: '24px' }}>
+    <div className="modal-overlay" style={{ zIndex: 1000, overflowY: 'auto' }}>
+      <div className="modal-card" style={{ maxWidth: '620px', width: '92%', maxHeight: 'calc(100vh - 32px)', padding: '24px', overflowY: 'auto', margin: 'auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

@@ -123,6 +123,11 @@ class GovernanceEngine {
       return true;
     }
 
+    // Explicit approval gate for full-platform implementation plan after research & Knowledge Hub ingestion
+    if (toolParams?.requiresApproval === true || (toolId === 'invoke_parallel_agents' && toolParams?.phase === 'implementation_after_research')) {
+      return true;
+    }
+
     // Accidental Data Loss Prevention (ADLP) patterns always checked on shell commands
     if (toolId === 'run_command') {
       const safety = this.checkCommandSafety(toolParams?.command || '');

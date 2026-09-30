@@ -30,10 +30,24 @@ class AgentFactory {
         const data = JSON.parse(fs.readFileSync(this.persistedAgentsPath, 'utf8'));
         if (Array.isArray(data)) {
           data.forEach(agent => {
-            this.agents.set(agent.id, agent);
+            const defaultAgent = this.agents.get(agent.id);
+            if (defaultAgent && defaultAgent.isBuiltin) {
+              // Merge any newly introduced built-in tools & skills while preserving custom user edits
+              const mergedTools = Array.from(new Set([...(defaultAgent.tools || []), ...(agent.tools || [])]));
+              const mergedSkills = Array.from(new Set([...(defaultAgent.skills || []), ...(agent.skills || [])]));
+              this.agents.set(agent.id, {
+                ...defaultAgent,
+                ...agent,
+                tools: mergedTools,
+                skills: mergedSkills
+              });
+            } else {
+              this.agents.set(agent.id, agent);
+            }
           });
         }
       }
+      this.savePersistedAgents();
     } catch (e) {
       console.warn('[AgentFactory] Could not load persisted agents:', e.message);
     }

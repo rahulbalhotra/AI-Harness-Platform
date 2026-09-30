@@ -22,37 +22,48 @@ export default function ApprovalModal({ approval, onResolve, onClose }) {
   const isFolder = approval.toolId === 'create_directory';
   const isBrowserTest = approval.toolId === 'launch_browser_test';
   const isEnvTest = approval.toolId === 'run_environment_test';
+  const isParallelSwarm = approval.toolId === 'invoke_parallel_agents';
+  const kbDoc = approval.parameters?.knowledgeDoc;
 
   return (
     <div style={{
       position: 'fixed',
       inset: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
       backdropFilter: 'blur(8px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 100,
-      padding: '20px'
+      zIndex: 1000,
+      padding: '16px',
+      overflowY: 'auto',
+      overflowX: 'hidden'
     }}>
       <div 
         className="glass-panel-elevated animate-fade-in"
         style={{
           width: '100%',
-          maxWidth: '560px',
+          maxWidth: isParallelSwarm ? '660px' : '560px',
+          maxHeight: 'calc(100vh - 32px)',
+          maxHeight: 'calc(100dvh - 32px)',
           borderRadius: '12px',
           overflow: 'hidden',
-          border: '1px solid rgba(245, 158, 11, 0.4)'
+          border: '1px solid rgba(245, 158, 11, 0.4)',
+          display: 'flex',
+          flexDirection: 'column',
+          margin: 'auto',
+          boxShadow: '0 20px 48px rgba(0, 0, 0, 0.6)'
         }}
       >
         {/* Header */}
         <div style={{
           backgroundColor: 'rgba(245, 158, 11, 0.12)',
           borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
-          padding: '16px 20px',
+          padding: '14px 18px',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px'
+          gap: '12px',
+          flexShrink: 0
         }}>
           <div style={{
             width: '36px',
@@ -62,22 +73,63 @@ export default function ApprovalModal({ approval, onResolve, onClose }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--accent-amber)'
+            color: 'var(--accent-amber)',
+            flexShrink: 0
           }}>
             <ShieldAlert size={22} />
           </div>
           <div>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#fef3c7' }}>
-              Human-in-the-Loop Approval Required
+            <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#fef3c7', margin: 0 }}>
+              {isParallelSwarm ? 'Approve Architecture Plan & Launch Parallel Swarm' : 'Human-in-the-Loop Approval Required'}
             </h3>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Agent requested permission to execute a privileged SDLC action.
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+              {isParallelSwarm
+                ? 'Research Agent ingested PRD into Knowledge Hub. Review and approve parallel repository implementation.'
+                : 'Agent requested permission to execute a privileged SDLC action.'}
             </p>
           </div>
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ 
+          padding: '18px 20px', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '14px', 
+          flex: '1 1 auto', 
+          overflowY: 'auto', 
+          minHeight: 0 
+        }}>
+          {/* Ingested Knowledge Hub Document Badge for Parallel Swarm */}
+          {isParallelSwarm && kbDoc && (
+            <div style={{
+              backgroundColor: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              borderRadius: '8px',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  📚 Phase 1 Complete: Specification Ingested in Knowledge Hub
+                </span>
+                <span className="badge badge-emerald" style={{ fontSize: '10px' }}>
+                  {kbDoc.chunkCount || 6} RAG Chunks Indexed
+                </span>
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                {kbDoc.title}
+              </div>
+              {kbDoc.savedFilePath && (
+                <div style={{ fontSize: '11.5px', fontFamily: 'var(--font-mono)', color: '#94a3b8' }}>
+                  Saved in Repo: <span style={{ color: '#38bdf8' }}>{kbDoc.savedFilePath}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Tool information */}
           <div style={{
             backgroundColor: 'rgba(0, 0, 0, 0.4)',
@@ -102,13 +154,47 @@ export default function ApprovalModal({ approval, onResolve, onClose }) {
                   <FileCode2 size={15} color="var(--accent-indigo)" />
                 )}
                 <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {approval.toolName || approval.toolId}
+                  {isParallelSwarm ? (approval.parameters?.planTitle || 'Parallel Multi-Agent Swarm Implementation') : (approval.toolName || approval.toolId)}
                 </span>
               </div>
               <span className="badge badge-amber">
-                Risk: {approval.riskLevel || 'High'}
+                {isParallelSwarm ? `${approval.parameters?.tasks?.length || 5} Agents in Parallel` : `Risk: ${approval.riskLevel || 'High'}`}
               </span>
             </div>
+
+            {/* Parallel Swarm Tasks List */}
+            {isParallelSwarm && Array.isArray(approval.parameters?.tasks) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: '1.45' }}>
+                  {approval.parameters.planObjective}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {approval.parameters.tasks.map((t, idx) => (
+                    <div key={idx} style={{
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '3px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <strong style={{ fontSize: '12px', color: '#e2e8f0' }}>{t.role} ({t.agentId})</strong>
+                        {t.targetFiles && t.targetFiles.length > 0 && (
+                          <span style={{ fontSize: '10.5px', fontFamily: 'var(--font-mono)', color: '#818cf8' }}>
+                            {t.targetFiles.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                        {t.taskDescription}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Browser Testing Target */}
             {isBrowserTest && (
@@ -198,7 +284,7 @@ export default function ApprovalModal({ approval, onResolve, onClose }) {
               </div>
             )}
 
-            {!isTerminal && !isFile && !isFolder && !isBrowserTest && (
+            {!isTerminal && !isFile && !isFolder && !isBrowserTest && !isParallelSwarm && (
               <div>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Parameters:</span>
                 <pre style={{ marginTop: '4px' }}>
@@ -215,7 +301,7 @@ export default function ApprovalModal({ approval, onResolve, onClose }) {
             </label>
             <input
               type="text"
-              placeholder="e.g. Approved with dry-run flag, or use alternative command..."
+              placeholder="e.g. Approved, proceed with parallel implementation in repository..."
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               style={{ width: '100%' }}
@@ -225,13 +311,15 @@ export default function ApprovalModal({ approval, onResolve, onClose }) {
 
         {/* Footer actions */}
         <div style={{
-          backgroundColor: 'rgba(15, 20, 32, 0.9)',
+          backgroundColor: 'rgba(15, 20, 32, 0.95)',
           borderTop: '1px solid var(--border-subtle)',
-          padding: '12px 20px',
+          padding: '12px 18px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-end',
-          gap: '10px'
+          gap: '10px',
+          flexWrap: 'wrap',
+          flexShrink: 0
         }}>
           <button
             className="btn btn-secondary"
@@ -254,7 +342,7 @@ export default function ApprovalModal({ approval, onResolve, onClose }) {
             disabled={submitting}
           >
             <CheckCircle size={15} />
-            {isBrowserTest ? 'Approve & Launch Chrome' : 'Approve & Execute'}
+            {isParallelSwarm ? 'Approve Plan & Launch Swarm' : isBrowserTest ? 'Approve & Launch Chrome' : 'Approve & Execute'}
           </button>
         </div>
       </div>

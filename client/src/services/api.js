@@ -88,17 +88,62 @@ export async function getModels() {
   return await res.json();
 }
 
+export async function getActiveModelStatus(agentId = null) {
+  const qs = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  const res = await fetch(`${API_BASE}/models/active${qs}`);
+  return await res.json();
+}
+
+export async function setActiveModel(modelId, agentId = null) {
+  const res = await fetch(`${API_BASE}/models/active`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modelId, agentId })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to switch active model');
+  }
+  return await res.json();
+}
+
+export async function updateModelRetryPolicy(policy) {
+  const res = await fetch(`${API_BASE}/models/retry-policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(policy)
+  });
+  return await res.json();
+}
+
 export async function addModel(modelData) {
   const res = await fetch(`${API_BASE}/models`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(modelData)
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to add model');
+  }
+  return await res.json();
+}
+
+export async function updateModel(modelId, updates) {
+  const res = await fetch(`${API_BASE}/models/${encodeURIComponent(modelId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update model configuration');
+  }
   return await res.json();
 }
 
 export async function toggleModel(modelId, enabled) {
-  const res = await fetch(`${API_BASE}/models/${modelId}/toggle`, {
+  const res = await fetch(`${API_BASE}/models/${encodeURIComponent(modelId)}/toggle`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled })
@@ -446,6 +491,28 @@ export async function getKnowledgeDocuments() {
   return await res.json();
 }
 
+export async function getKnowledgeDocumentById(docId) {
+  const res = await fetch(`${API_BASE}/knowledge/documents/${encodeURIComponent(docId)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to fetch document content');
+  }
+  return await res.json();
+}
+
+export async function uploadKnowledgeDocuments(files, tags = []) {
+  const res = await fetch(`${API_BASE}/knowledge/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files, tags })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to ingest uploaded documents');
+  }
+  return await res.json();
+}
+
 export async function createKnowledgeDocument(docData) {
   const res = await fetch(`${API_BASE}/knowledge/documents`, {
     method: 'POST',
@@ -535,3 +602,114 @@ export async function switchUser(username) {
   }
   return await res.json();
 }
+
+// Project Management & Jira Board API
+export async function getProjects() {
+  const res = await fetch(`${API_BASE}/pm/projects`);
+  return await res.json();
+}
+
+export async function getProject(id) {
+  const res = await fetch(`${API_BASE}/pm/projects/${id}`);
+  if (!res.ok) throw new Error('Project not found');
+  return await res.json();
+}
+
+export async function createProject(projectData) {
+  const res = await fetch(`${API_BASE}/pm/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(projectData)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to create project');
+  }
+  return await res.json();
+}
+
+export async function updateProject(id, updates) {
+  const res = await fetch(`${API_BASE}/pm/projects/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update project');
+  }
+  return await res.json();
+}
+
+export async function getStories(projectId = null, agentId = null) {
+  const params = new URLSearchParams();
+  if (projectId) params.append('projectId', projectId);
+  if (agentId) params.append('agentId', agentId);
+  const queryStr = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_BASE}/pm/stories${queryStr}`);
+  return await res.json();
+}
+
+export async function createStory(storyData) {
+  const res = await fetch(`${API_BASE}/pm/stories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(storyData)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to create story');
+  }
+  return await res.json();
+}
+
+export async function updateStory(id, updates) {
+  const res = await fetch(`${API_BASE}/pm/stories/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update story');
+  }
+  return await res.json();
+}
+
+export async function transitionStory(id, status, agentId = null, comment = null) {
+  const res = await fetch(`${API_BASE}/pm/stories/${id}/transition`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, agentId, comment })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to transition story');
+  }
+  return await res.json();
+}
+
+export async function deleteStory(id) {
+  const res = await fetch(`${API_BASE}/pm/stories/${id}`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to delete story');
+  }
+  return await res.json();
+}
+
+export async function generateStories(projectId, prompt) {
+  const res = await fetch(`${API_BASE}/pm/generate-stories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, prompt })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to generate stories');
+  }
+  return await res.json();
+}
+

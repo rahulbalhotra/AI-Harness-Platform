@@ -13,6 +13,7 @@ import RepositoryAccessModal from './components/RepositoryAccessModal';
 import KnowledgeBaseHub from './components/KnowledgeBaseHub';
 import DatabaseVersioningHub from './components/DatabaseVersioningHub';
 import UserLoginModal from './components/UserLoginModal';
+import ProjectManagementHub from './components/ProjectManagementHub';
 
 import { 
   getAgents, 
@@ -23,7 +24,9 @@ import {
   getPendingApprovals,
   getWorkspaceInfo,
   resolveApproval,
-  getAuthMe
+  getAuthMe,
+  getActiveModelStatus,
+  setActiveModel
 } from './services/api';
 
 class ErrorBoundary extends React.Component {
@@ -85,6 +88,8 @@ export default function App() {
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [activeApprovalModal, setActiveApprovalModal] = useState(null);
   const [sessionTokens, setSessionTokens] = useState(14820);
+  const [routingStatus, setRoutingStatus] = useState(null);
+  const [lastRetryEvent, setLastRetryEvent] = useState(null);
 
   // Current User & Access Control State
   const [currentUser, setCurrentUser] = useState({
@@ -98,20 +103,24 @@ export default function App() {
   // Initial data load
   const loadHarnessData = async () => {
     try {
-      const [aList, mList, tList, mcpList, gov, wsInfo, authUser] = await Promise.all([
+      const [aList, mList, tList, mcpList, gov, wsInfo, authUser, activeModelSt] = await Promise.all([
         getAgents(),
         getModels(),
         getTools(),
         getMCPServers(),
         getGovernancePolicy(),
         getWorkspaceInfo().catch(() => null),
-        getAuthMe().catch(() => null)
+        getAuthMe().catch(() => null),
+        getActiveModelStatus().catch(() => null)
       ]);
       setAgents(aList);
       setModels(mList);
       setTools(tList);
       setMcpServers(mcpList);
       setPolicy(gov.policy);
+      if (activeModelSt) {
+        setRoutingStatus(activeModelSt);
+      }
 
       if (authUser?.username) {
         setCurrentUser(authUser);
@@ -173,6 +182,31 @@ export default function App() {
             if (data.payload?.totalTokens) {
               setSessionTokens(prev => prev + data.payload.totalTokens);
             }
+            if (data.payload?.modelId) {
+              getActiveModelStatus(data.payload.agentId).then(st => {
+                if (st) setRoutingStatus(st);
+              }).catch(() => {});
+            }
+          } else if (data.type === 'MODEL_ROUTED') {
+            setRoutingStatus(prev => ({
+              ...(prev || {}),
+              lastRoutedModelId: data.payload.actualModelId,
+              activeModel: {
+                ...(prev?.activeModel || {}),
+                id: data.payload.actualModelId,
+                name: data.payload.actualModelName || data.payload.actualModelId,
+                provider: data.payload.provider,
+                routingMode: data.payload.routingMode || prev?.selectedMode || 'auto'
+              },
+              lastRouteEvent: data.payload
+            }));
+          } else if (data.type === 'MODEL_RETRY') {
+            setLastRetryEvent(data.payload);
+            setTimeout(() => setLastRetryEvent(null), 6000);
+          } else if (data.type === 'ACTIVE_MODEL_UPDATED') {
+            setRoutingStatus(data.payload);
+          } else if (data.type === 'MODEL_UPDATED') {
+            getModels().then(mList => setModels(mList)).catch(() => {});
           }
         } catch (e) {}
       };
@@ -193,9 +227,29 @@ export default function App() {
     };
   }, []);
 
+  // Refresh resolved active model when activeAgentId changes
+  useEffect(() => {
+    if (activeAgentId) {
+      getActiveModelStatus(activeAgentId).then(st => {
+        if (st) setRoutingStatus(st);
+      }).catch(() => {});
+    }
+  }, [activeAgentId]);
+
   const handleSelectAgentForChat = (agentId) => {
     setActiveAgentId(agentId);
     setActiveTab('chat');
+  };
+
+  const handleSelectActiveModel = async (modelId) => {
+    try {
+      const updatedStatus = await setActiveModel(modelId, activeAgentId);
+      setRoutingStatus(updatedStatus);
+      const refreshedAgents = await getAgents();
+      setAgents(refreshedAgents);
+    } catch (err) {
+      console.error('Failed to switch active model:', err);
+    }
   };
 
   const handleResolveApprovalModal = async (approvalId, executionId, decision, comment) => {
@@ -205,7 +259,7 @@ export default function App() {
     setActiveApprovalModal(null);
   };
 
-  const activeModel = models.find(m => m.id === agents.find(a => a.id === activeAgentId)?.modelId);
+  const activeModel = routingStatus?.activeModel || models.find(m => m.id === agents.find(a => a.id === activeAgentId)?.modelId) || models[0];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
@@ -227,6 +281,10 @@ export default function App() {
               <ChatCanvas
                 agents={agents}
                 models={models}
+                activeModel={activeModel}
+                routingStatus={routingStatus}
+                lastRetryEvent={lastRetryEvent}
+                onSelectModel={handleSelectActiveModel}
                 activeAgentId={activeAgentId}
                 onSelectAgent={setActiveAgentId}
                 onTriggerApprovalModal={(appr) => setActiveApprovalModal(appr)}
@@ -246,9 +304,21 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'pm' && (
+              <ProjectManagementHub
+                agents={agents}
+                activeAgentId={activeAgentId}
+                currentUser={currentUser}
+                isConnected={isConnected}
+              />
+            )}
+
             {activeTab === 'models' && (
               <ModelHub
                 models={models}
+                activeModel={activeModel}
+                routingStatus={routingStatus}
+                onSelectModel={handleSelectActiveModel}
                 onRefreshModels={loadHarnessData}
               />
             )}
@@ -293,6 +363,10 @@ export default function App() {
       <StatusBar
         isConnected={isConnected}
         activeModel={activeModel}
+        models={models}
+        routingStatus={routingStatus}
+        lastRetryEvent={lastRetryEvent}
+        onSelectModel={handleSelectActiveModel}
         policy={policy}
         pendingCount={pendingApprovals.length}
         workspaceRoot={workspaceRoot}

@@ -15,21 +15,51 @@ import {
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
-  Radio
+  Radio,
+  Edit3,
+  Settings,
+  Sliders
 } from 'lucide-react';
 import { 
   addModel, 
+  updateModel,
   toggleModel, 
   deleteModel, 
   saveApiKey, 
   deleteApiKey, 
   getApiKeyDetails, 
-  testModelConnection 
+  testModelConnection,
+  updateModelRetryPolicy
 } from '../services/api';
 
-export default function ModelHub({ models, onRefreshModels }) {
+export default function ModelHub({ models, activeModel = null, routingStatus = null, onSelectModel = null, onRefreshModels }) {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingModel, setEditingModel] = useState(null);
+  const [originalEditId, setOriginalEditId] = useState(null);
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [showRetryModal, setShowRetryModal] = useState(false);
+  const [retrySaved, setRetrySaved] = useState(false);
+
+  // Retry & Routing policy state
+  const [retryForm, setRetryForm] = useState({
+    maxRetries: routingStatus?.retryPolicy?.maxRetries ?? 2,
+    baseDelayMs: routingStatus?.retryPolicy?.baseDelayMs ?? 350,
+    maxDelayMs: routingStatus?.retryPolicy?.maxDelayMs ?? 2500,
+    backoffMultiplier: routingStatus?.retryPolicy?.backoffMultiplier ?? 2,
+    enableProviderFailover: routingStatus?.retryPolicy?.enableProviderFailover ?? true
+  });
+
+  useEffect(() => {
+    if (routingStatus?.retryPolicy) {
+      setRetryForm({
+        maxRetries: routingStatus.retryPolicy.maxRetries ?? 2,
+        baseDelayMs: routingStatus.retryPolicy.baseDelayMs ?? 350,
+        maxDelayMs: routingStatus.retryPolicy.maxDelayMs ?? 2500,
+        backoffMultiplier: routingStatus.retryPolicy.backoffMultiplier ?? 2,
+        enableProviderFailover: routingStatus.retryPolicy.enableProviderFailover ?? true
+      });
+    }
+  }, [routingStatus]);
 
   // Connection testing states
   const [cardTestStatus, setCardTestStatus] = useState({});
@@ -39,13 +69,14 @@ export default function ModelHub({ models, onRefreshModels }) {
   const [newModel, setNewModel] = useState({
     id: '',
     name: '',
-    provider: 'local',
+    provider: 'google',
     contextWindow: 128000,
     inputCostPerM: 1.0,
     outputCostPerM: 3.0,
     avgLatencyMs: 500,
     supportsTools: true,
     supportsVision: false,
+    isDefault: false,
     description: ''
   });
 
@@ -77,6 +108,55 @@ export default function ModelHub({ models, onRefreshModels }) {
       loadKeyDetails(keyProvider);
     }
   }, [showKeyModal, keyProvider]);
+
+  const handleOpenEditModal = (model) => {
+    setOriginalEditId(model.id);
+    setEditingModel({
+      id: model.id || '',
+      name: model.name || '',
+      provider: model.provider || 'google',
+      contextWindow: model.contextWindow ?? 128000,
+      inputCostPerM: model.inputCostPerM ?? 1.0,
+      outputCostPerM: model.outputCostPerM ?? 3.0,
+      avgLatencyMs: model.avgLatencyMs ?? 500,
+      supportsTools: model.supportsTools !== undefined ? !!model.supportsTools : true,
+      supportsVision: model.supportsVision !== undefined ? !!model.supportsVision : false,
+      isDefault: !!model.isDefault,
+      enabled: model.enabled !== undefined ? !!model.enabled : true,
+      description: model.description || ''
+    });
+  };
+
+  const handleSaveEditModel = async (e) => {
+    e.preventDefault();
+    if (!editingModel || !originalEditId) return;
+    try {
+      await updateModel(originalEditId, editingModel);
+      if (editingModel.isDefault && onSelectModel) {
+        await onSelectModel(editingModel.id);
+      }
+      onRefreshModels?.();
+      setEditingModel(null);
+      setOriginalEditId(null);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleSaveRetryPolicy = async (e) => {
+    e.preventDefault();
+    try {
+      await updateModelRetryPolicy(retryForm);
+      setRetrySaved(true);
+      onRefreshModels?.();
+      setTimeout(() => {
+        setRetrySaved(false);
+        setShowRetryModal(false);
+      }, 900);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 
   const handleDeleteKey = async () => {
     if (!confirm(`Are you sure you want to delete the saved key for ${keyProvider}?`)) return;
@@ -179,13 +259,14 @@ export default function ModelHub({ models, onRefreshModels }) {
       setNewModel({
         id: '',
         name: '',
-        provider: 'local',
+        provider: 'google',
         contextWindow: 128000,
         inputCostPerM: 1.0,
         outputCostPerM: 3.0,
         avgLatencyMs: 500,
         supportsTools: true,
         supportsVision: false,
+        isDefault: false,
         description: ''
       });
     } catch (err) {
@@ -226,7 +307,9 @@ export default function ModelHub({ models, onRefreshModels }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(15, 20, 32, 0.5)'
+        backgroundColor: 'rgba(15, 20, 32, 0.5)',
+        flexWrap: 'wrap',
+        gap: '12px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
@@ -242,16 +325,30 @@ export default function ModelHub({ models, onRefreshModels }) {
             <Cpu size={22} color="#fff" />
           </div>
           <div>
-            <h1 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Model Hub & Intelligent Router
-            </h1>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Manage foundation models, configure fallback chains, benchmark latency, and store API keys.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h1 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                Model Hub & Intelligent Router
+              </h1>
+              {activeModel && (
+                <span className="badge badge-cyan" style={{ fontSize: '11px' }}>
+                  ⚡ Active: {activeModel.name || activeModel.id}
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Edit model configurations, set active models, configure failure retry policies, and manage API keys.
             </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowRetryModal(true)}
+            title="Configure Model Routing & Failure Retry Policy"
+          >
+            <Sliders size={14} /> Routing & Retry Config
+          </button>
           <button
             className="btn btn-secondary"
             onClick={() => setShowKeyModal(true)}
@@ -271,50 +368,67 @@ export default function ModelHub({ models, onRefreshModels }) {
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
           gap: '18px'
         }}>
-          {models.map(model => (
-            <div
-              key={model.id}
-              className="glass-panel"
-              style={{
-                borderRadius: '12px',
-                padding: '20px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '14px',
-                border: '1px solid',
-                borderColor: model.enabled ? 'var(--border-subtle)' : 'rgba(255, 255, 255, 0.03)',
-                opacity: model.enabled ? 1 : 0.6
-              }}
-            >
-              {/* Header */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {model.name}
-                    </h3>
-                    {model.isDefault && (
-                      <span className="badge badge-indigo">Default</span>
-                    )}
+          {models.map(model => {
+            const isCurrentlyActive = activeModel?.id === model.id;
+            return (
+              <div
+                key={model.id}
+                className="glass-panel"
+                style={{
+                  borderRadius: '12px',
+                  padding: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                  border: '1px solid',
+                  borderColor: isCurrentlyActive
+                    ? 'rgba(6, 182, 212, 0.55)'
+                    : model.enabled
+                      ? 'var(--border-subtle)'
+                      : 'rgba(255, 255, 255, 0.03)',
+                  boxShadow: isCurrentlyActive ? '0 0 20px rgba(6, 182, 212, 0.12)' : 'none',
+                  opacity: model.enabled ? 1 : 0.6
+                }}
+              >
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                        {model.name}
+                      </h3>
+                      {isCurrentlyActive && (
+                        <span className="badge badge-emerald" style={{ fontSize: '10px' }}>⚡ Active</span>
+                      )}
+                      {model.isDefault && (
+                        <span className="badge badge-indigo" style={{ fontSize: '10px' }}>Default</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: '3px' }}>
+                      {model.id} &bull; <span style={{ textTransform: 'capitalize' }}>{model.provider}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {model.id} &bull; <span style={{ textTransform: 'capitalize' }}>{model.provider}</span>
-                  </div>
-                </div>
 
-                {/* Toggle & Delete */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <button
-                    onClick={() => handleToggle(model.id, model.enabled)}
-                    className={model.enabled ? 'btn btn-success' : 'btn btn-secondary'}
-                    style={{ padding: '3px 8px', fontSize: '11px' }}
-                  >
-                    {model.enabled ? 'Enabled' : 'Disabled'}
-                  </button>
-                  {!model.isDefault && (
+                  {/* Edit, Toggle & Delete Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <button
+                      onClick={() => handleOpenEditModal(model)}
+                      className="btn btn-secondary"
+                      title="Edit Model Configuration"
+                      style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Edit3 size={12} /> Edit
+                    </button>
+                    <button
+                      onClick={() => handleToggle(model.id, model.enabled)}
+                      className={model.enabled ? 'btn btn-success' : 'btn btn-secondary'}
+                      style={{ padding: '3px 8px', fontSize: '11px' }}
+                    >
+                      {model.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
                     <button
                       onClick={() => handleDelete(model.id)}
                       title="Remove Model"
@@ -330,105 +444,457 @@ export default function ModelHub({ models, onRefreshModels }) {
                     >
                       <Trash2 size={15} />
                     </button>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4', margin: 0 }}>
+                  {model.description}
+                </p>
+
+                {/* Metrics Matrix */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '8px',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  padding: '10px',
+                  borderRadius: '8px'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <Layers size={10} /> Context
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
+                      {(model.contextWindow / 1000).toFixed(0)}k tokens
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <Clock size={10} /> Latency
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-cyan)', marginTop: '2px' }}>
+                      ~{model.avgLatencyMs}ms
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <DollarSign size={10} /> Cost/1M
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-emerald)', marginTop: '2px' }}>
+                      ${model.inputCostPerM} / ${model.outputCostPerM}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Capabilities */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {model.supportsTools && <span className="badge badge-cyan">Tools / Function Calling</span>}
+                  {model.supportsVision && <span className="badge badge-indigo">Vision Support</span>}
+                </div>
+
+                {/* Live Connection Test & Set Active */}
+                <div style={{
+                  marginTop: 'auto',
+                  paddingTop: '10px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        onClick={() => handleCardTestConnection(model)}
+                        disabled={cardTestStatus[model.id]?.loading}
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '4px 10px',
+                          fontSize: '11px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }}
+                      >
+                        <RefreshCw size={11} className={cardTestStatus[model.id]?.loading ? 'animate-spin' : ''} />
+                        {cardTestStatus[model.id]?.loading ? 'Testing...' : 'Test Connection'}
+                      </button>
+
+                      {onSelectModel && (
+                        <button
+                          onClick={() => onSelectModel(model.id)}
+                          disabled={isCurrentlyActive}
+                          className={isCurrentlyActive ? 'btn btn-success' : 'btn btn-secondary'}
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            borderColor: isCurrentlyActive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(6, 182, 212, 0.3)'
+                          }}
+                        >
+                          <Zap size={11} />
+                          {isCurrentlyActive ? 'Active Model' : 'Set Active'}
+                        </button>
+                      )}
+                    </div>
+
+                    {cardTestStatus[model.id] && !cardTestStatus[model.id].loading && (
+                      cardTestStatus[model.id].success ? (
+                        <span className="badge badge-emerald" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
+                          <CheckCircle2 size={11} /> Connected ({cardTestStatus[model.id].latencyMs}ms)
+                        </span>
+                      ) : (
+                        <span className="badge badge-rose" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
+                          <AlertTriangle size={11} /> Failed
+                        </span>
+                      )
+                    )}
+                  </div>
+
+                  {cardTestStatus[model.id] && !cardTestStatus[model.id].loading && !cardTestStatus[model.id].success && (
+                    <div style={{ fontSize: '10px', color: 'var(--accent-rose)', lineHeight: '1.3', wordBreak: 'break-word' }}>
+                      {cardTestStatus[model.id].message}
+                    </div>
                   )}
                 </div>
               </div>
-
-              {/* Description */}
-              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                {model.description}
-              </p>
-
-              {/* Metrics Matrix */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '8px',
-                background: 'rgba(0, 0, 0, 0.3)',
-                padding: '10px',
-                borderRadius: '8px'
-              }}>
-                <div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <Layers size={10} /> Context
-                  </div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
-                    {(model.contextWindow / 1000).toFixed(0)}k tokens
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <Clock size={10} /> Latency
-                  </div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-cyan)', marginTop: '2px' }}>
-                    ~{model.avgLatencyMs}ms
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <DollarSign size={10} /> Cost/1M
-                  </div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-emerald)', marginTop: '2px' }}>
-                    ${model.inputCostPerM} / ${model.outputCostPerM}
-                  </div>
-                </div>
-              </div>
-
-              {/* Capabilities */}
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {model.supportsTools && <span className="badge badge-cyan">Tools / Function Calling</span>}
-                {model.supportsVision && <span className="badge badge-indigo">Vision Support</span>}
-              </div>
-
-              {/* Live Connection Test */}
-              <div style={{
-                marginTop: 'auto',
-                paddingTop: '10px',
-                borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <button
-                    onClick={() => handleCardTestConnection(model)}
-                    disabled={cardTestStatus[model.id]?.loading}
-                    className="btn btn-secondary"
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: '11px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}
-                  >
-                    <RefreshCw size={11} className={cardTestStatus[model.id]?.loading ? 'animate-spin' : ''} />
-                    {cardTestStatus[model.id]?.loading ? 'Testing...' : 'Test Connection'}
-                  </button>
-
-                  {cardTestStatus[model.id] && !cardTestStatus[model.id].loading && (
-                    cardTestStatus[model.id].success ? (
-                      <span className="badge badge-emerald" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
-                        <CheckCircle2 size={11} /> Connected ({cardTestStatus[model.id].latencyMs}ms)
-                      </span>
-                    ) : (
-                      <span className="badge badge-rose" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
-                        <AlertTriangle size={11} /> Failed
-                      </span>
-                    )
-                  )}
-                </div>
-
-                {cardTestStatus[model.id] && !cardTestStatus[model.id].loading && !cardTestStatus[model.id].success && (
-                  <div style={{ fontSize: '10px', color: 'var(--accent-rose)', lineHeight: '1.3', wordBreak: 'break-word' }}>
-                    {cardTestStatus[model.id].message}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {/* Modal: Edit Model Configuration */}
+      {editingModel && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+          padding: '20px'
+        }}>
+          <form onSubmit={handleSaveEditModel} className="glass-panel-elevated animate-fade-in" style={{
+            width: '100%',
+            maxWidth: '580px',
+            borderRadius: '12px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit3 size={16} color="var(--accent-cyan)" />
+                Edit Model Configuration
+              </h3>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                {originalEditId}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Model ID / API Identifier *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingModel.id}
+                  onChange={(e) => setEditingModel({ ...editingModel, id: e.target.value })}
+                  style={{ width: '100%', fontFamily: 'var(--font-mono)' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Display Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingModel.name}
+                  onChange={(e) => setEditingModel({ ...editingModel, name: e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Provider
+                </label>
+                <select
+                  value={editingModel.provider}
+                  onChange={(e) => setEditingModel({ ...editingModel, provider: e.target.value })}
+                  style={{ width: '100%' }}
+                >
+                  <option value="google">Google Cloud / Vertex</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="azure">Azure OpenAI</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="ollama">Ollama (Local)</option>
+                  <option value="vllm">vLLM / HuggingFace</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Context Window (Tokens)
+                </label>
+                <input
+                  type="number"
+                  value={editingModel.contextWindow}
+                  onChange={(e) => setEditingModel({ ...editingModel, contextWindow: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Avg Latency (ms)
+                </label>
+                <input
+                  type="number"
+                  value={editingModel.avgLatencyMs}
+                  onChange={(e) => setEditingModel({ ...editingModel, avgLatencyMs: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Input Cost / 1M ($)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editingModel.inputCostPerM}
+                  onChange={(e) => setEditingModel({ ...editingModel, inputCostPerM: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Output Cost / 1M ($)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editingModel.outputCostPerM}
+                  onChange={(e) => setEditingModel({ ...editingModel, outputCostPerM: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '10px',
+              background: 'rgba(0,0,0,0.25)',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editingModel.supportsTools}
+                  onChange={(e) => setEditingModel({ ...editingModel, supportsTools: e.target.checked })}
+                />
+                Tools / Function Calling
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editingModel.supportsVision}
+                  onChange={(e) => setEditingModel({ ...editingModel, supportsVision: e.target.checked })}
+                />
+                Vision / Multimodal Support
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editingModel.isDefault}
+                  onChange={(e) => setEditingModel({ ...editingModel, isDefault: e.target.checked })}
+                />
+                Set as Default Primary Model
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editingModel.enabled}
+                  onChange={(e) => setEditingModel({ ...editingModel, enabled: e.target.checked })}
+                />
+                Enabled in Model Router
+              </label>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                Description
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Model use-cases, specialization..."
+                value={editingModel.description}
+                onChange={(e) => setEditingModel({ ...editingModel, description: e.target.value })}
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setEditingModel(null);
+                  setOriginalEditId(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                <Check size={14} /> Save Model Config
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Routing & Failure Retry Policy Config */}
+      {showRetryModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+          padding: '20px'
+        }}>
+          <form onSubmit={handleSaveRetryPolicy} className="glass-panel-elevated animate-fade-in" style={{
+            width: '100%',
+            maxWidth: '520px',
+            borderRadius: '12px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sliders size={16} color="var(--accent-cyan)" />
+              Model Routing & Failure Retry Policy
+            </h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+              Configure exponential backoff retries on transient rate-limit/network failures and automatic failover across configured providers.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Max Retries per Model
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={5}
+                  value={retryForm.maxRetries}
+                  onChange={(e) => setRetryForm({ ...retryForm, maxRetries: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Backoff Multiplier
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min={1}
+                  max={5}
+                  value={retryForm.backoffMultiplier}
+                  onChange={(e) => setRetryForm({ ...retryForm, backoffMultiplier: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Base Backoff Delay (ms)
+                </label>
+                <input
+                  type="number"
+                  step={50}
+                  min={100}
+                  value={retryForm.baseDelayMs}
+                  onChange={(e) => setRetryForm({ ...retryForm, baseDelayMs: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Max Backoff Delay (ms)
+                </label>
+                <input
+                  type="number"
+                  step={100}
+                  min={500}
+                  value={retryForm.maxDelayMs}
+                  onChange={(e) => setRetryForm({ ...retryForm, maxDelayMs: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              color: 'var(--text-primary)',
+              background: 'rgba(0,0,0,0.25)',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-subtle)',
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={retryForm.enableProviderFailover}
+                onChange={(e) => setRetryForm({ ...retryForm, enableProviderFailover: e.target.checked })}
+              />
+              Enable Automatic Multi-Provider Failover & Circuit Breaker
+            </label>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowRetryModal(false)}
+              >
+                Close
+              </button>
+              <button type="submit" className="btn btn-primary">
+                {retrySaved ? <><Check size={14} /> Policy Saved!</> : 'Save Retry Policy'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Modal: Add Model */}
       {showAddModal && (
@@ -445,14 +911,14 @@ export default function ModelHub({ models, onRefreshModels }) {
         }}>
           <form onSubmit={handleAddModel} className="glass-panel-elevated animate-fade-in" style={{
             width: '100%',
-            maxWidth: '540px',
+            maxWidth: '560px',
             borderRadius: '12px',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '16px'
+            gap: '14px'
           }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
               Register Custom Model Endpoint
             </h3>
 
@@ -464,7 +930,7 @@ export default function ModelHub({ models, onRefreshModels }) {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. ollama/mistral-large"
+                  placeholder="e.g. gemini-2.5-pro-exp"
                   value={newModel.id}
                   onChange={(e) => setNewModel({ ...newModel, id: e.target.value })}
                   style={{ width: '100%' }}
@@ -477,7 +943,7 @@ export default function ModelHub({ models, onRefreshModels }) {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Mistral Large 2"
+                  placeholder="e.g. Gemini 2.5 Pro Exp"
                   value={newModel.name}
                   onChange={(e) => setNewModel({ ...newModel, name: e.target.value })}
                   style={{ width: '100%' }}
@@ -512,6 +978,44 @@ export default function ModelHub({ models, onRefreshModels }) {
                   type="number"
                   value={newModel.contextWindow}
                   onChange={(e) => setNewModel({ ...newModel, contextWindow: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Avg Latency (ms)
+                </label>
+                <input
+                  type="number"
+                  value={newModel.avgLatencyMs}
+                  onChange={(e) => setNewModel({ ...newModel, avgLatencyMs: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Input Cost / 1M ($)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={newModel.inputCostPerM}
+                  onChange={(e) => setNewModel({ ...newModel, inputCostPerM: +e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Output Cost / 1M ($)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={newModel.outputCostPerM}
+                  onChange={(e) => setNewModel({ ...newModel, outputCostPerM: +e.target.value })}
                   style={{ width: '100%' }}
                 />
               </div>

@@ -88,6 +88,10 @@ function formatMessageContent(content) {
 export default function ChatCanvas({ 
   agents, 
   models, 
+  activeModel = null,
+  routingStatus = null,
+  lastRetryEvent = null,
+  onSelectModel = null,
   activeAgentId, 
   onSelectAgent, 
   onTriggerApprovalModal,
@@ -228,7 +232,8 @@ export default function ChatCanvas({
   };
 
   const selectedAgent = agents.find(a => a.id === activeAgentId) || agents[0];
-  const selectedModel = models.find(m => m.id === selectedAgent?.modelId);
+  const selectedModel = activeModel || models.find(m => m.id === selectedAgent?.modelId) || models[0];
+  const selectedRoutingMode = routingStatus?.selectedMode || 'auto';
 
   // Timer for Gemini-style thinking animation
   useEffect(() => {
@@ -770,79 +775,135 @@ export default function ChatCanvas({
         
         {/* Top Header */}
         <div style={{
-          padding: '12px 20px',
+          padding: '10px 18px',
           backgroundColor: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           zIndex: 10
         }}>
           {/* Left: Sidebar Toggle + Agent Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: '1 1 auto', minWidth: '260px', flexWrap: 'wrap' }}>
             {!sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(true)}
                 title="Open chat history"
                 className="btn btn-secondary"
-                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
+                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', flexShrink: 0 }}
               >
                 <PanelLeftOpen size={16} />
                 <span>History</span>
               </button>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '26px', filter: selectedAgent?.id === 'agent-willow' ? 'drop-shadow(0 0 10px rgba(16, 185, 129, 0.5))' : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '26px', flexShrink: 0, filter: selectedAgent?.id === 'agent-willow' ? 'drop-shadow(0 0 10px rgba(16, 185, 129, 0.5))' : 'none' }}>
                 {selectedAgent?.avatar || '🌿'}
               </span>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h2 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
                     {selectedAgent?.name}
                   </h2>
                   {selectedAgent?.id === 'agent-willow' ? (
                     <>
-                      <span className="badge badge-emerald" style={{ fontSize: '10px' }}>
+                      <span className="badge badge-emerald" style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>
                         Master Orchestrator
                       </span>
-                      <span className="badge badge-indigo" style={{ fontSize: '10px' }}>
+                      <span className="badge badge-indigo" style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>
                         General Assistant
                       </span>
                     </>
                   ) : (
-                    <span className="badge badge-cyan" style={{ fontSize: '10px' }}>
+                    <span className="badge badge-cyan" style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>
                       {selectedAgent?.sdlcStage}
                     </span>
                   )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px', fontSize: '11px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                   {selectedAgent?.id === 'agent-willow' ? (
                     <span>Autonomous delegation to: <strong style={{ color: 'var(--accent-cyan)' }}>Specialist SDLC Agents</strong></span>
                   ) : (
                     <span>Specialist Persona &bull; Policy: <strong style={{ color: 'var(--accent-amber)' }}>{selectedAgent?.autonomyPolicy}</strong></span>
                   )}
-                  <span>&bull;</span>
-                  <span>Model: <strong style={{ color: 'var(--accent-indigo)' }}>{selectedModel?.name}</strong></span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Right: Partner Dropdown & "+ New Chat" Button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Right: Active Model Switcher, Partner Dropdown & "+ New Chat" Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flex: '0 1 auto' }}>
+            {onSelectModel && models.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Model:</span>
+                <select
+                  value={selectedRoutingMode === 'auto' ? 'auto' : (selectedModel?.id || 'auto')}
+                  onChange={(e) => onSelectModel(e.target.value)}
+                  style={{
+                    fontSize: '11.5px',
+                    padding: '4px 8px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    borderRadius: '6px',
+                    color: 'var(--text-primary)',
+                    maxWidth: '190px'
+                  }}
+                  title="Switch active model or use Adaptive Auto-Router with automatic failure retry"
+                >
+                  <option value="auto">⚡ Auto ({selectedModel?.name || 'Adaptive Router'})</option>
+                  <optgroup label="Pin Specific Active Model">
+                    {models.filter(m => m.enabled !== false).map(m => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>
+                    ))}
+                  </optgroup>
+                </select>
+                <span
+                  style={{
+                    fontSize: '9.5px',
+                    padding: '2px 5px',
+                    borderRadius: '4px',
+                    background: selectedRoutingMode === 'auto' ? 'rgba(6, 182, 212, 0.14)' : 'rgba(99, 102, 241, 0.16)',
+                    color: selectedRoutingMode === 'auto' ? '#38bdf8' : '#a5b4fc',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {selectedRoutingMode === 'auto' ? '⚡ Auto' : '📌 Pinned'}
+                </span>
+                {lastRetryEvent && (
+                  <span
+                    style={{
+                      fontSize: '9.5px',
+                      padding: '2px 5px',
+                      borderRadius: '4px',
+                      background: 'rgba(245, 158, 11, 0.18)',
+                      color: '#fcd34d',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    🔄 Retry #{lastRetryEvent.attempt}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Active Partner:</span>
               <select
                 value={selectedAgent?.id}
                 onChange={(e) => onSelectAgent(e.target.value)}
                 style={{
-                  fontSize: '12px',
+                  fontSize: '11.5px',
                   padding: '4px 8px',
                   backgroundColor: 'rgba(0, 0, 0, 0.5)',
                   border: '1px solid var(--border-subtle)',
                   borderRadius: '6px',
-                  color: 'var(--text-primary)'
+                  color: 'var(--text-primary)',
+                  maxWidth: '190px'
                 }}
               >
                 <option value="agent-willow">🌿 Willow (Master Orchestrator)</option>
@@ -983,10 +1044,40 @@ export default function ChatCanvas({
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   
                   {/* Sender Name & Meta */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       {isUser ? 'You' : (msg.agentName || selectedAgent?.name)}
                     </span>
+                    {!isUser && (msg.modelName || selectedModel?.name) && (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          background: 'rgba(99, 102, 241, 0.14)',
+                          color: '#a5b4fc',
+                          border: '1px solid rgba(99, 102, 241, 0.28)',
+                          fontFamily: 'var(--font-mono)'
+                        }}
+                      >
+                        {msg.modelName || selectedModel?.name}
+                      </span>
+                    )}
+                    {!isUser && msg.routingMetadata && (msg.routingMetadata.retried || msg.routingMetadata.failedOver) && (
+                      <span
+                        title={`Routed via ${msg.routingMetadata.provider} after ${msg.routingMetadata.attempts} attempt(s)`}
+                        style={{
+                          fontSize: '9.5px',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          color: '#fcd34d',
+                          border: '1px solid rgba(245, 158, 11, 0.3)'
+                        }}
+                      >
+                        {msg.routingMetadata.retried ? `🔄 Retried (${msg.routingMetadata.attempts} attempts)` : `⚡ Auto-Failover`}
+                      </span>
+                    )}
                     {msg.telemetry && (
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                         {msg.telemetry.durationMs}ms &bull; {msg.telemetry.totalTokens} tokens
@@ -1502,6 +1593,142 @@ export default function ChatCanvas({
                         })}
                       </div>
                     )}
+                    {/* Render Knowledge Hub Ingested Specification Card if present */}
+                    {msg.knowledgeHubDoc && (
+                      <div style={{
+                        marginBottom: '12px',
+                        borderRadius: '11px',
+                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                        background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                        padding: '12px 15px',
+                        boxShadow: '0 6px 18px rgba(0, 0, 0, 0.25)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#38bdf8' }}>
+                            <span>📚</span>
+                            <span>Knowledge Hub Specification Ingested & Indexed</span>
+                          </div>
+                          <span className="badge badge-cyan" style={{ fontSize: '10px' }}>
+                            {msg.knowledgeHubDoc.chunkCount || 1} RAG Chunks
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginBottom: '4px' }}>
+                          {msg.knowledgeHubDoc.title}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '11px', color: '#94a3b8' }}>
+                          <span>Doc ID: <code style={{ color: '#bae6fd' }}>{msg.knowledgeHubDoc.documentId}</code></span>
+                          {msg.knowledgeHubDoc.savedFilePath && (
+                            <span>Repo Path: <code style={{ color: '#bae6fd' }}>{msg.knowledgeHubDoc.savedFilePath}</code></span>
+                          )}
+                          <span>Available to all swarm agents via <code style={{ color: '#bae6fd' }}>search_knowledge_base</code></span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Render Referenced Knowledge Hub Documents (pgvector RAG Citations) if present */}
+                    {Array.isArray(msg.ragCitations) && msg.ragCitations.length > 0 && (
+                      <div style={{
+                        marginBottom: '12px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(139, 92, 246, 0.35)',
+                        background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(15, 23, 42, 0.92) 100%)',
+                        padding: '10px 14px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 700, color: '#c4b5fd' }}>
+                            <span>📚</span>
+                            <span>Referenced Knowledge Hub Document{msg.ragCitations.length > 1 ? 's' : ''} (pgvector RAG)</span>
+                          </div>
+                          <span className="badge badge-purple" style={{ fontSize: '9.5px' }}>
+                            {msg.ragCitations.length} Source{msg.ragCitations.length > 1 ? 's' : ''} Cited
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {msg.ragCitations.map((cite, cIdx) => (
+                            <div key={cite.documentId || cIdx} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              background: 'rgba(15, 23, 42, 0.75)',
+                              border: '1px solid rgba(139, 92, 246, 0.25)',
+                              fontSize: '11px'
+                            }}>
+                              <FileText size={12} color="#a78bfa" />
+                              <span style={{ fontWeight: 600, color: '#f8fafc' }}>{cite.title}</span>
+                              <span style={{ color: '#94a3b8' }}>({cite.source})</span>
+                              {cite.score && (
+                                <span style={{ color: '#34d399', fontWeight: 600 }}>
+                                  {(cite.score * 100).toFixed(0)}% match
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Render Inline Parallel Swarm Plan Approval Card if present */}
+                    {msg.pendingSwarmApproval && (
+                      <div style={{
+                        marginBottom: '14px',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(15, 23, 42, 0.92) 100%)',
+                        padding: '14px 16px',
+                        boxShadow: '0 8px 22px rgba(0, 0, 0, 0.3)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700, color: '#fbbf24' }}>
+                            <span>⚡</span>
+                            <span>Phase 2: Parallel Multi-Agent Swarm Plan ({msg.pendingSwarmApproval.tasks?.length || 5} Agents)</span>
+                          </div>
+                          <span className="badge badge-amber" style={{ fontSize: '10px' }}>
+                            Awaiting User Approval
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                          {(msg.pendingSwarmApproval.tasks || []).map((t, idx) => (
+                            <div key={idx} style={{
+                              padding: '7px 10px',
+                              borderRadius: '7px',
+                              background: 'rgba(15, 23, 42, 0.65)',
+                              border: '1px solid rgba(148, 163, 184, 0.15)',
+                              fontSize: '11.5px'
+                            }}>
+                              <div style={{ fontWeight: 600, color: '#a78bfa' }}>{t.agentId}</div>
+                              <div style={{ color: '#cbd5e1', marginTop: '2px' }}>{t.task}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-emerald"
+                            style={{ padding: '7px 14px', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                            onClick={async () => {
+                              try {
+                                await api.resolveApproval(
+                                  msg.pendingSwarmApproval.approvalId,
+                                  msg.pendingSwarmApproval.executionId,
+                                  'approved',
+                                  'Approved via inline Parallel Swarm Plan card'
+                                );
+                              } catch (err) {
+                                console.error('Inline approval failed:', err);
+                              }
+                            }}
+                          >
+                            <CheckCircle2 size={14} /> Approve Plan & Launch Parallel Swarm
+                          </button>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                            Or type <strong style={{ color: '#e2e8f0' }}>"approve"</strong> in chat to start implementation
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Render Structured Deliverable Card if present */}
                     {msg.deliverableSummary && (
                       <div style={{
@@ -1599,8 +1826,13 @@ export default function ChatCanvas({
                       </div>
                     )}
 
-                    {/* Antigravity Scratchpad Memory Drawer */}
-                    {msg.scratchpad && (
+                    {/* Antigravity Scratchpad Memory Drawer — Rendered Intelligently Only When Required */}
+                    {msg.scratchpad && msg.scratchpad.isActive !== false && (
+                      (msg.scratchpad.filesCreated?.length > 0) ||
+                      (msg.scratchpad.observations?.length > 0) ||
+                      (msg.scratchpad.issuesFound?.length > 0) ||
+                      (msg.scratchpad.fixHistory?.length > 0)
+                    ) && (
                       <div style={{
                         marginTop: '10px',
                         marginBottom: '10px',

@@ -407,8 +407,8 @@ export default function ToolMCPHub({
         {activeTab === 'tools' && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-            gap: '18px'
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 330px), 1fr))',
+            gap: '16px'
           }}>
             {tools.map(tool => (
               <div
@@ -416,7 +416,7 @@ export default function ToolMCPHub({
                 className="glass-panel"
                 style={{
                   borderRadius: '12px',
-                  padding: '20px',
+                  padding: '18px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '12px',
@@ -425,7 +425,7 @@ export default function ToolMCPHub({
                   opacity: tool.enabled ? 1 : 0.6
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -515,23 +515,25 @@ export default function ToolMCPHub({
                   marginTop: 'auto',
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '8px'
                 }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                     {tool.updatedAt ? `Edited: ${new Date(tool.updatedAt).toLocaleDateString()}` : (tool.isSystem ? 'Core Builtin' : 'Custom Extension')}
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button
                       className="btn btn-secondary"
-                      style={{ padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      style={{ padding: '4px 9px', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px' }}
                       onClick={(e) => handleOpenEditTool(tool, e)}
                     >
                       <Edit3 size={12} /> Edit
                     </button>
                     <button
                       className="btn btn-secondary"
-                      style={{ padding: '4px 10px', fontSize: '12px' }}
+                      style={{ padding: '4px 9px', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px' }}
                       onClick={() => handleSelectToolForTesting(tool)}
                     >
                       <Play size={12} /> Test In Sandbox
@@ -698,22 +700,27 @@ export default function ToolMCPHub({
         <div style={{
           position: 'fixed',
           inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.75)',
+          backgroundColor: 'rgba(0,0,0,0.8)',
           backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 100,
-          padding: '20px'
+          zIndex: 1000,
+          padding: '16px',
+          overflowY: 'auto'
         }}>
           <form onSubmit={handleAddTool} className="glass-panel-elevated animate-fade-in" style={{
             width: '100%',
             maxWidth: '560px',
+            maxHeight: 'calc(100vh - 32px)',
+            maxHeight: 'calc(100dvh - 32px)',
             borderRadius: '12px',
-            padding: '24px',
+            padding: '22px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '16px'
+            gap: '14px',
+            overflowY: 'auto',
+            margin: 'auto'
           }}>
             <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
               Register Custom Tool Definition
@@ -824,22 +831,27 @@ export default function ToolMCPHub({
         <div style={{
           position: 'fixed',
           inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.75)',
+          backgroundColor: 'rgba(0,0,0,0.8)',
           backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 100,
-          padding: '20px'
+          zIndex: 1000,
+          padding: '16px',
+          overflowY: 'auto'
         }}>
           <form onSubmit={handleAddMCP} className="glass-panel-elevated animate-fade-in" style={{
             width: '100%',
             maxWidth: '520px',
+            maxHeight: 'calc(100vh - 32px)',
+            maxHeight: 'calc(100dvh - 32px)',
             borderRadius: '12px',
-            padding: '24px',
+            padding: '22px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '16px'
+            gap: '14px',
+            overflowY: 'auto',
+            margin: 'auto'
           }}>
             <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
               Connect Model Context Protocol (MCP) Server
@@ -922,13 +934,14 @@ export default function ToolMCPHub({
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
             backdropFilter: 'blur(8px)',
             zIndex: 1000,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '24px'
+            padding: '16px',
+            overflowY: 'auto'
           }}
           onClick={() => setShowEditToolModal(false)}
         >
@@ -937,14 +950,16 @@ export default function ToolMCPHub({
             style={{
               width: '100%',
               maxWidth: '780px',
-              maxHeight: '92vh',
+              maxHeight: 'calc(100vh - 32px)',
+              maxHeight: 'calc(100dvh - 32px)',
               backgroundColor: '#0d1117',
               border: '1px solid rgba(16, 185, 129, 0.35)',
               borderRadius: '16px',
               display: 'flex',
               flexDirection: 'column',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              margin: 'auto'
             }}
             onClick={(e) => e.stopPropagation()}
           >

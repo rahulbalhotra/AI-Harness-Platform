@@ -9,6 +9,7 @@ class DatabaseManager {
     this.pgPool = null;
     this.engine = 'embedded'; // 'postgres' | 'embedded'
     this.isConnected = false;
+    this.pgVectorEnabled = false;
     this.lastError = null;
 
     // In-memory relational store (mirrors PostgreSQL tables)
@@ -20,7 +21,9 @@ class DatabaseManager {
       knowledge_documents: [],
       knowledge_chunks: [],
       agent_versions: [],
-      tool_versions: []
+      tool_versions: [],
+      projects: [],
+      stories: []
     };
 
     this.init();
@@ -48,7 +51,9 @@ class DatabaseManager {
           knowledge_documents: parsed.knowledge_documents || [],
           knowledge_chunks: parsed.knowledge_chunks || [],
           agent_versions: parsed.agent_versions || [],
-          tool_versions: parsed.tool_versions || []
+          tool_versions: parsed.tool_versions || [],
+          projects: parsed.projects || [],
+          stories: parsed.stories || []
         };
       }
     } catch (err) {
@@ -251,6 +256,7 @@ class DatabaseManager {
         title VARCHAR(256) NOT NULL,
         source VARCHAR(512) NOT NULL,
         source_type VARCHAR(64) NOT NULL,
+        full_content TEXT,
         tags JSONB DEFAULT '[]',
         doc_metadata JSONB DEFAULT '{}',
         chunk_count INTEGER DEFAULT 0,
@@ -258,16 +264,21 @@ class DatabaseManager {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
+      ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS full_content TEXT;
+
       CREATE TABLE IF NOT EXISTS knowledge_chunks (
         id VARCHAR(64) PRIMARY KEY,
         document_id VARCHAR(64) REFERENCES knowledge_documents(id) ON DELETE CASCADE,
         chunk_index INTEGER NOT NULL,
         content TEXT NOT NULL,
         embedding JSONB,
+        embedding_vector JSONB,
         token_count INTEGER DEFAULT 0,
         metadata JSONB DEFAULT '{}',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS embedding_vector JSONB;
 
       CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
       CREATE INDEX IF NOT EXISTS idx_doc_versions_file ON document_versions(file_path);
@@ -290,10 +301,59 @@ class DatabaseManager {
       );
 
       CREATE INDEX IF NOT EXISTS idx_tool_versions_tool ON tool_versions(tool_id);
+
+      CREATE TABLE IF NOT EXISTS projects (
+        id VARCHAR(64) PRIMARY KEY,
+        key VARCHAR(16) NOT NULL,
+        name VARCHAR(256) NOT NULL,
+        description TEXT,
+        status VARCHAR(32) DEFAULT 'planning',
+        lead_agent_id VARCHAR(64),
+        start_date VARCHAR(32),
+        target_date VARCHAR(32),
+        brd JSONB DEFAULT '{}',
+        plan JSONB DEFAULT '{}',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS stories (
+        id VARCHAR(64) PRIMARY KEY,
+        project_id VARCHAR(64) REFERENCES projects(id) ON DELETE CASCADE,
+        title VARCHAR(256) NOT NULL,
+        description TEXT,
+        type VARCHAR(32) DEFAULT 'story',
+        status VARCHAR(32) DEFAULT 'todo',
+        priority VARCHAR(32) DEFAULT 'medium',
+        assigned_agent_id VARCHAR(64),
+        assigned_agent_name VARCHAR(128),
+        avatar VARCHAR(16),
+        story_points INTEGER DEFAULT 3,
+        start_date TIMESTAMP WITH TIME ZONE,
+        due_date TIMESTAMP WITH TIME ZONE,
+        target_files JSONB DEFAULT '[]',
+        activity_log JSONB DEFAULT '[]',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_stories_project ON stories(project_id);
+      CREATE INDEX IF NOT EXISTS idx_stories_agent ON stories(assigned_agent_id);
+      CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status);
     `;
 
     try {
       await this.pgPool.query(migrationSql);
+      try {
+        await this.pgPool.query('CREATE EXTENSION IF NOT EXISTS vector;');
+        await this.pgPool.query('ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS pgvector_embedding vector(384);');
+        await this.pgPool.query('CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_pgvec ON knowledge_chunks USING hnsw (pgvector_embedding vector_cosine_ops);');
+        this.pgVectorEnabled = true;
+        console.log('[DatabaseManager] pgvector extension and HNSW vector(384) index active.');
+      } catch (vecErr) {
+        this.pgVectorEnabled = false;
+        console.log('[DatabaseManager] pgvector extension not installed on Postgres instance; using hybrid JSONB vector(384) cosine similarity.');
+      }
       console.log('[DatabaseManager] PostgreSQL migrations applied successfully.');
     } catch (err) {
       console.error('[DatabaseManager] Error running PostgreSQL migrations:', err.message);
@@ -775,6 +835,7 @@ class DatabaseManager {
       title: doc.title || 'Untitled Document',
       source: doc.source || 'manual',
       source_type: doc.source_type || 'markdown',
+      full_content: doc.full_content || doc.content || '',
       tags: doc.tags || [],
       doc_metadata: doc.doc_metadata || {},
       chunk_count: doc.chunk_count || 0,
@@ -785,11 +846,11 @@ class DatabaseManager {
     if (this.engine === 'postgres') {
       try {
         await this.pgPool.query(
-          `INSERT INTO knowledge_documents (id, title, source, source_type, tags, doc_metadata, chunk_count, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          `INSERT INTO knowledge_documents (id, title, source, source_type, full_content, tags, doc_metadata, chunk_count, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             record.id, record.title, record.source, record.source_type,
-            JSON.stringify(record.tags), JSON.stringify(record.doc_metadata),
+            record.full_content, JSON.stringify(record.tags), JSON.stringify(record.doc_metadata),
             record.chunk_count, record.created_at, record.updated_at
           ]
         );
@@ -815,6 +876,30 @@ class DatabaseManager {
     return [...this.store.knowledge_documents].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
   }
 
+  async getKnowledgeDocumentById(docId) {
+    let doc = null;
+    if (this.engine === 'postgres') {
+      try {
+        const res = await this.pgPool.query('SELECT * FROM knowledge_documents WHERE id = $1', [docId]);
+        doc = res.rows[0] || null;
+      } catch (err) {
+        console.error('[DB getKnowledgeDocumentById pg error]:', err.message);
+      }
+    }
+    if (!doc) {
+      doc = this.store.knowledge_documents.find(d => d.id === docId) || null;
+    }
+    if (!doc) return null;
+
+    const chunks = await this.getKnowledgeChunks(docId);
+    const reconstructedContent = doc.full_content || chunks.map(c => c.content).join('\n\n');
+    return {
+      ...doc,
+      full_content: reconstructedContent,
+      chunks
+    };
+  }
+
   async deleteKnowledgeDocument(docId) {
     if (this.engine === 'postgres') {
       try {
@@ -836,15 +921,30 @@ class DatabaseManager {
     if (this.engine === 'postgres') {
       try {
         for (const chunk of chunks) {
-          await this.pgPool.query(
-            `INSERT INTO knowledge_chunks (id, document_id, chunk_index, content, embedding, token_count, metadata, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [
-              chunk.id, chunk.document_id, chunk.chunk_index, chunk.content,
-              JSON.stringify(chunk.embedding || []), chunk.token_count || 0,
-              JSON.stringify(chunk.metadata || {}), chunk.created_at || new Date().toISOString()
-            ]
-          );
+          if (this.pgVectorEnabled && Array.isArray(chunk.embedding_vector)) {
+            const vecLiteral = `[${chunk.embedding_vector.join(',')}]`;
+            await this.pgPool.query(
+              `INSERT INTO knowledge_chunks (id, document_id, chunk_index, content, embedding, embedding_vector, pgvector_embedding, token_count, metadata, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10)`,
+              [
+                chunk.id, chunk.document_id, chunk.chunk_index, chunk.content,
+                JSON.stringify(chunk.embedding || {}), JSON.stringify(chunk.embedding_vector || []),
+                vecLiteral, chunk.token_count || 0,
+                JSON.stringify(chunk.metadata || {}), chunk.created_at || new Date().toISOString()
+              ]
+            );
+          } else {
+            await this.pgPool.query(
+              `INSERT INTO knowledge_chunks (id, document_id, chunk_index, content, embedding, embedding_vector, token_count, metadata, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [
+                chunk.id, chunk.document_id, chunk.chunk_index, chunk.content,
+                JSON.stringify(chunk.embedding || {}), JSON.stringify(chunk.embedding_vector || []),
+                chunk.token_count || 0,
+                JSON.stringify(chunk.metadata || {}), chunk.created_at || new Date().toISOString()
+              ]
+            );
+          }
         }
       } catch (err) {
         console.error('[DB saveKnowledgeChunks pg error]:', err.message);
@@ -854,6 +954,28 @@ class DatabaseManager {
     this.store.knowledge_chunks.push(...chunks);
     this.saveEmbeddedStore();
     return chunks;
+  }
+
+  async searchPgVector(queryVector, topK = 5) {
+    if (this.engine === 'postgres' && this.pgVectorEnabled && Array.isArray(queryVector)) {
+      try {
+        const vecLiteral = `[${queryVector.join(',')}]`;
+        const res = await this.pgPool.query(
+          `SELECT c.*, d.title AS document_title, d.source AS document_source, d.source_type, d.tags AS document_tags,
+                  1 - (c.pgvector_embedding <=> $1::vector) AS cosine_score
+           FROM knowledge_chunks c
+           LEFT JOIN knowledge_documents d ON d.id = c.document_id
+           WHERE c.pgvector_embedding IS NOT NULL
+           ORDER BY c.pgvector_embedding <=> $1::vector
+           LIMIT $2`,
+          [vecLiteral, topK]
+        );
+        return res.rows;
+      } catch (err) {
+        console.warn('[DB searchPgVector fallback]:', err.message);
+      }
+    }
+    return null;
   }
 
   async getKnowledgeChunks(documentId = null) {
@@ -972,6 +1094,218 @@ class DatabaseManager {
       author: r.author,
       timestamp: r.created_at
     })).sort((a, b) => b.version - a.version);
+  }
+
+  // --- Projects & User Stories (Jira-style PM Module) CRUD ---
+
+  async saveProject(proj) {
+    const record = {
+      id: proj.id,
+      key: proj.key || 'PROJ',
+      name: proj.name || 'Untitled Project',
+      description: proj.description || '',
+      status: proj.status || 'planning',
+      lead_agent_id: proj.leadAgentId || proj.lead_agent_id || 'agent-willow',
+      start_date: proj.startDate || proj.start_date || new Date().toISOString().split('T')[0],
+      target_date: proj.targetDate || proj.target_date || new Date(Date.now() + 86400000 * 14).toISOString().split('T')[0],
+      brd: proj.brd || {},
+      plan: proj.plan || {},
+      created_at: proj.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (this.engine === 'postgres' && this.pgPool) {
+      try {
+        await this.pgPool.query(
+          `INSERT INTO projects (id, key, name, description, status, lead_agent_id, start_date, target_date, brd, plan, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           ON CONFLICT (id) DO UPDATE SET
+             name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+             brd = EXCLUDED.brd, plan = EXCLUDED.plan, updated_at = NOW()`,
+          [
+            record.id, record.key, record.name, record.description, record.status,
+            record.lead_agent_id, record.start_date, record.target_date,
+            JSON.stringify(record.brd), JSON.stringify(record.plan),
+            record.created_at, record.updated_at
+          ]
+        );
+      } catch (err) {
+        console.error('[DB saveProject pg error]:', err.message);
+      }
+    }
+
+    if (!this.store.projects) this.store.projects = [];
+    const idx = this.store.projects.findIndex(p => p.id === record.id);
+    if (idx !== -1) {
+      this.store.projects[idx] = { ...this.store.projects[idx], ...record };
+    } else {
+      this.store.projects.push(record);
+    }
+    this.saveEmbeddedStore();
+    return record;
+  }
+
+  async getProjects() {
+    if (this.engine === 'postgres' && this.pgPool) {
+      try {
+        const res = await this.pgPool.query('SELECT * FROM projects ORDER BY updated_at DESC');
+        return res.rows.map(r => ({
+          ...r,
+          leadAgentId: r.lead_agent_id,
+          startDate: r.start_date,
+          targetDate: r.target_date,
+          brd: typeof r.brd === 'string' ? JSON.parse(r.brd) : (r.brd || {}),
+          plan: typeof r.plan === 'string' ? JSON.parse(r.plan) : (r.plan || {})
+        }));
+      } catch (err) {
+        console.error('[DB getProjects pg error]:', err.message);
+      }
+    }
+
+    return (this.store.projects || []).map(r => ({
+      ...r,
+      leadAgentId: r.lead_agent_id || r.leadAgentId,
+      startDate: r.start_date || r.startDate,
+      targetDate: r.target_date || r.targetDate
+    }));
+  }
+
+  async getProject(id) {
+    const list = await this.getProjects();
+    return list.find(p => p.id === id) || null;
+  }
+
+  async updateProject(id, updates) {
+    const proj = await this.getProject(id);
+    if (!proj) return null;
+    const merged = { ...proj, ...updates, updated_at: new Date().toISOString() };
+    return this.saveProject(merged);
+  }
+
+  async saveStory(story) {
+    const record = {
+      id: story.id,
+      project_id: story.projectId || story.project_id || 'proj_amazon_clone',
+      title: story.title || 'Untitled User Story',
+      description: story.description || '',
+      type: story.type || 'story',
+      status: story.status || 'todo',
+      priority: story.priority || 'medium',
+      assigned_agent_id: story.assignedAgentId || story.assigned_agent_id || 'agent-senior-engineer',
+      assigned_agent_name: story.assignedAgentName || story.assigned_agent_name || 'Full-Stack Senior Engineer',
+      avatar: story.avatar || '💻',
+      story_points: story.storyPoints ?? story.story_points ?? 3,
+      start_date: story.startDate || story.start_date || new Date().toISOString(),
+      due_date: story.dueDate || story.due_date || new Date(Date.now() + 86400000 * 3).toISOString(),
+      target_files: story.targetFiles || story.target_files || [],
+      activity_log: story.activityLog || story.activity_log || [],
+      created_at: story.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (this.engine === 'postgres' && this.pgPool) {
+      try {
+        await this.pgPool.query(
+          `INSERT INTO stories (id, project_id, title, description, type, status, priority, assigned_agent_id, assigned_agent_name, avatar, story_points, start_date, due_date, target_files, activity_log, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           ON CONFLICT (id) DO UPDATE SET
+             title = EXCLUDED.title, description = EXCLUDED.description, type = EXCLUDED.type,
+             status = EXCLUDED.status, priority = EXCLUDED.priority, assigned_agent_id = EXCLUDED.assigned_agent_id,
+             assigned_agent_name = EXCLUDED.assigned_agent_name, avatar = EXCLUDED.avatar,
+             story_points = EXCLUDED.story_points, due_date = EXCLUDED.due_date,
+             target_files = EXCLUDED.target_files, activity_log = EXCLUDED.activity_log, updated_at = NOW()`,
+          [
+            record.id, record.project_id, record.title, record.description, record.type,
+            record.status, record.priority, record.assigned_agent_id, record.assigned_agent_name,
+            record.avatar, record.story_points, record.start_date, record.due_date,
+            JSON.stringify(record.target_files), JSON.stringify(record.activity_log),
+            record.created_at, record.updated_at
+          ]
+        );
+      } catch (err) {
+        console.error('[DB saveStory pg error]:', err.message);
+      }
+    }
+
+    if (!this.store.stories) this.store.stories = [];
+    const idx = this.store.stories.findIndex(s => s.id === record.id);
+    if (idx !== -1) {
+      this.store.stories[idx] = { ...this.store.stories[idx], ...record };
+    } else {
+      this.store.stories.push(record);
+    }
+    this.saveEmbeddedStore();
+    return this.sanitizeStory(record);
+  }
+
+  async getStories(projectId = null) {
+    if (this.engine === 'postgres' && this.pgPool) {
+      try {
+        let q = 'SELECT * FROM stories';
+        const params = [];
+        if (projectId) {
+          q += ' WHERE project_id = $1';
+          params.push(projectId);
+        }
+        q += ' ORDER BY created_at ASC';
+        const res = await this.pgPool.query(q, params);
+        return res.rows.map(r => this.sanitizeStory(r));
+      } catch (err) {
+        console.error('[DB getStories pg error]:', err.message);
+      }
+    }
+
+    let list = this.store.stories || [];
+    if (projectId) {
+      list = list.filter(s => (s.project_id || s.projectId) === projectId);
+    }
+    return list.map(s => this.sanitizeStory(s));
+  }
+
+  async updateStory(id, updates) {
+    const stories = await this.getStories();
+    const story = stories.find(s => s.id === id);
+    if (!story) return null;
+    const merged = { ...story, ...updates, updated_at: new Date().toISOString() };
+    return this.saveStory(merged);
+  }
+
+  async deleteStory(id) {
+    if (this.engine === 'postgres' && this.pgPool) {
+      try {
+        await this.pgPool.query('DELETE FROM stories WHERE id = $1', [id]);
+      } catch (err) {
+        console.error('[DB deleteStory pg error]:', err.message);
+      }
+    }
+
+    if (this.store.stories) {
+      this.store.stories = this.store.stories.filter(s => s.id !== id);
+      this.saveEmbeddedStore();
+    }
+    return true;
+  }
+
+  sanitizeStory(record) {
+    return {
+      id: record.id,
+      projectId: record.project_id || record.projectId,
+      title: record.title,
+      description: record.description,
+      type: record.type,
+      status: record.status,
+      priority: record.priority,
+      assignedAgentId: record.assigned_agent_id || record.assignedAgentId,
+      assignedAgentName: record.assigned_agent_name || record.assignedAgentName,
+      avatar: record.avatar,
+      storyPoints: record.story_points ?? record.storyPoints ?? 3,
+      startDate: record.start_date || record.startDate,
+      dueDate: record.due_date || record.dueDate,
+      targetFiles: typeof record.target_files === 'string' ? JSON.parse(record.target_files) : (record.target_files || record.targetFiles || []),
+      activityLog: typeof record.activity_log === 'string' ? JSON.parse(record.activity_log) : (record.activity_log || record.activityLog || []),
+      created_at: record.created_at,
+      updated_at: record.updated_at
+    };
   }
 
   // --- Telemetry & Diagnostics ---

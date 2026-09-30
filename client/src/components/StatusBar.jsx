@@ -1,9 +1,13 @@
 import React from 'react';
-import { Shield, Cpu, Activity, FolderGit2, CheckCircle2, AlertTriangle, Layers } from 'lucide-react';
+import { Shield, Cpu, Activity, FolderGit2, CheckCircle2, AlertTriangle, Layers, RefreshCw } from 'lucide-react';
 
 export default function StatusBar({ 
   isConnected, 
   activeModel, 
+  models = [],
+  routingStatus = null,
+  lastRetryEvent = null,
+  onSelectModel = null,
   policy, 
   pendingCount, 
   workspaceRoot, 
@@ -14,6 +18,9 @@ export default function StatusBar({
   currentUser = null,
   onOpenLoginModal = () => {}
 }) {
+  const selectedMode = routingStatus?.selectedMode || 'auto';
+  const displayModelName = activeModel?.name || activeModel?.id || 'Gemini 2.5 Flash';
+
   return (
     <footer style={{
       height: '26px',
@@ -123,14 +130,73 @@ export default function StatusBar({
       </div>
 
       {/* Right items */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        {/* Active Model */}
-        {activeModel && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Cpu size={12} color="var(--accent-cyan)" />
-            <span style={{ color: 'var(--text-secondary)' }}>{activeModel.name || activeModel.id}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        {/* Live Retry / Failover Telemetry Pill */}
+        {lastRetryEvent && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '1px 7px',
+              borderRadius: '4px',
+              background: 'rgba(245, 158, 11, 0.18)',
+              color: '#fcd34d',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              fontSize: '10px'
+            }}
+            title={`Retry attempt #${lastRetryEvent.attempt}: ${lastRetryEvent.reason}`}
+          >
+            <RefreshCw size={11} />
+            <span>Retry #{lastRetryEvent.attempt} ({lastRetryEvent.modelId || lastRetryEvent.nextModelId})</span>
           </div>
         )}
+
+        {/* Dynamic Active Model Pill + Quick Switcher */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '1px 7px',
+            borderRadius: '4px',
+            background: 'rgba(6, 182, 212, 0.1)',
+            border: '1px solid rgba(6, 182, 212, 0.25)'
+          }}
+          title={`Active Model: ${displayModelName} (${selectedMode === 'auto' ? 'Adaptive Auto-Router' : 'Pinned Model'})`}
+        >
+          <Cpu size={12} color="var(--accent-cyan)" />
+          <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Model:</span>
+          {onSelectModel && models.length > 0 ? (
+            <select
+              value={selectedMode === 'auto' ? 'auto' : (activeModel?.id || 'auto')}
+              onChange={(e) => onSelectModel(e.target.value)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--accent-cyan)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                outline: 'none',
+                padding: 0
+              }}
+            >
+              <option value="auto" style={{ background: '#0f172a', color: '#38bdf8' }}>
+                ⚡ {displayModelName} (Auto)
+              </option>
+              {models.filter(m => m.enabled !== false).map(m => (
+                <option key={m.id} value={m.id} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                  {m.name} ({m.provider})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>
+              {displayModelName}
+            </span>
+          )}
+        </div>
 
         {/* Tokens used */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

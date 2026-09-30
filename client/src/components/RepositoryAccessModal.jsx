@@ -74,21 +74,27 @@ export default function RepositoryAccessModal({
     <div style={{
       position: 'fixed',
       inset: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
       backdropFilter: 'blur(8px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 110,
-      padding: '20px'
+      zIndex: 1100,
+      padding: '16px',
+      overflowY: 'auto'
     }}>
       <div 
         className="glass-panel-elevated animate-fade-in"
         style={{
           width: '100%',
           maxWidth: '580px',
+          maxHeight: 'calc(100vh - 32px)',
+          maxHeight: 'calc(100dvh - 32px)',
           borderRadius: '12px',
-          overflow: 'hidden',
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          margin: 'auto',
           border: isAuthorized ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)',
           boxShadow: isAuthorized 
             ? '0 20px 40px -15px rgba(16, 185, 129, 0.2)' 
