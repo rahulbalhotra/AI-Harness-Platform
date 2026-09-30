@@ -11,7 +11,8 @@ import {
   Settings, 
   BookOpen, 
   Database,
-  Kanban
+  Kanban,
+  Activity
 } from 'lucide-react';
 
 export default function ActivityBar({ 
@@ -24,6 +25,7 @@ export default function ActivityBar({
   const navItems = [
     { id: 'chat', label: 'Agent Studio & Pair Chat', icon: MessageSquare },
     { id: 'pm', label: 'Project Management & Jira Board', icon: Kanban },
+    { id: 'observability', label: 'Observability & Telemetry Tracing', icon: Activity },
     { id: 'agents', label: 'Agent Hub & Creator', icon: Bot },
     { id: 'pipelines', label: 'SDLC Multi-Agent Pipelines', icon: GitMerge },
     { id: 'knowledge', label: 'Knowledge Base & RAG', icon: BookOpen },
@@ -60,18 +62,19 @@ export default function ActivityBar({
     }}>
       {/* Brand Icon */}
       <div 
-        title="Antigravity Enterprise AI Harness Engine"
+        title="Antigravity Enterprise AI Harness Engine — Powered by Capgemini Design"
         style={{
           width: '36px',
           height: '36px',
           borderRadius: '10px',
-          background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
+          background: 'linear-gradient(135deg, #0070ad 0%, #00b2e3 50%, #eb214e 100%)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           marginBottom: '20px',
           cursor: 'pointer',
-          boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)'
+          boxShadow: '0 0 16px rgba(0, 112, 173, 0.45)',
+          position: 'relative'
         }}
       >
         <Sparkles size={20} color="#fff" />
@@ -93,8 +96,8 @@ export default function ActivityBar({
                 height: '42px',
                 borderRadius: '8px',
                 border: 'none',
-                background: isActive ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                color: isActive ? 'var(--accent-indigo)' : 'var(--text-muted)',
+                background: isActive ? 'rgba(0, 112, 173, 0.24)' : 'transparent',
+                color: isActive ? '#38c8f4' : 'var(--text-muted)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -104,7 +107,7 @@ export default function ActivityBar({
               }}
               onMouseEnter={(e) => {
                 if (!isActive) e.currentTarget.style.color = 'var(--text-primary)';
-                if (!isActive) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                if (!isActive) e.currentTarget.style.background = 'rgba(0, 163, 224, 0.08)';
               }}
               onMouseLeave={(e) => {
                 if (!isActive) e.currentTarget.style.color = 'var(--text-muted)';
@@ -118,9 +121,10 @@ export default function ActivityBar({
                   left: '-7px',
                   top: '8px',
                   bottom: '8px',
-                  width: '3px',
-                  backgroundColor: 'var(--accent-indigo)',
-                  borderRadius: '0 4px 4px 0'
+                  width: '3.5px',
+                  background: 'linear-gradient(to bottom, #0070ad, #00b2e3)',
+                  borderRadius: '0 4px 4px 0',
+                  boxShadow: '0 0 8px rgba(0, 178, 227, 0.6)'
                 }} />
               )}
               <Icon size={21} strokeWidth={isActive ? 2.2 : 1.8} />

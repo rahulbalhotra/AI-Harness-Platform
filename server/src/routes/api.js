@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 
-module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEngine, agentRuntime, sdlcOrchestrator, mcpManager, broadcast, db = null, knowledgeBaseManager = null, projectManager = null) {
+module.exports = function(agentFactory, toolRegistry, modelRouter, governanceEngine, agentRuntime, sdlcOrchestrator, mcpManager, broadcast, db = null, knowledgeBaseManager = null, projectManager = null, telemetryEngine = null) {
 
   // ===================== AUTHENTICATION & ACCESS CONTROL =====================
   router.post('/auth/login', async (req, res) => {
@@ -994,6 +994,129 @@ User Instructions: ${prompt || 'Generate next sprint user stories'}`;
       }
 
       res.status(201).json({ success: true, count: createdStories.length, stories: createdStories });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ===================== OBSERVABILITY & TELEMETRY =====================
+  router.get('/telemetry/overview', async (req, res) => {
+    try {
+      if (!telemetryEngine) {
+        return res.json({ summary: { totalTraces: 0, totalSpans: 0 }, agentMetrics: [], modelMetrics: [], toolMetrics: [] });
+      }
+      const data = await telemetryEngine.getOverview({
+        timeRange: req.query.timeRange || '24h',
+        agentId: req.query.agentId || 'all',
+        modelId: req.query.modelId || 'all',
+        status: req.query.status || 'all'
+      });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/telemetry/traces', async (req, res) => {
+    try {
+      if (!db) return res.json([]);
+      const traces = await db.getTelemetrySpans({
+        traceId: req.query.traceId,
+        agentId: req.query.agentId,
+        modelId: req.query.modelId,
+        type: req.query.type,
+        status: req.query.status,
+        since: req.query.since,
+        limit: req.query.limit || 100,
+        offset: req.query.offset || 0
+      });
+      res.json(traces);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/telemetry/traces/:traceId', async (req, res) => {
+    try {
+      if (!db) return res.status(404).json({ error: 'Database not available' });
+      const trace = await db.getTelemetryTrace(req.params.traceId);
+      if (!trace) return res.status(404).json({ error: 'Trace not found' });
+      res.json(trace);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/telemetry/simulate', async (req, res) => {
+    try {
+      if (!telemetryEngine) {
+        return res.status(400).json({ error: 'TelemetryEngine not enabled' });
+      }
+      const count = req.body.count ? parseInt(req.body.count, 10) : 3;
+      const result = await telemetryEngine.simulateTraffic(count);
+      if (typeof broadcast === 'function') {
+        broadcast('TELEMETRY_UPDATED', { action: 'simulation_complete', count: result.generatedTraces });
+      }
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/telemetry/traces', async (req, res) => {
+    try {
+      if (!db) return res.json({ success: true });
+      await db.clearTelemetrySpans();
+      if (telemetryEngine) {
+        telemetryEngine.recentSpans = [];
+      }
+      if (typeof broadcast === 'function') {
+        broadcast('TELEMETRY_UPDATED', { action: 'cleared' });
+      }
+      res.json({ success: true, message: 'Telemetry traces cleared' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/telemetry/export', async (req, res) => {
+    try {
+      if (!telemetryEngine) return res.status(400).json({ error: 'TelemetryEngine not enabled' });
+      const otel = await telemetryEngine.exportOpenTelemetryFormat();
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="harness-telemetry-otel.json"');
+      res.json(otel);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ===================== DATABASE HEALTH & INTEGRITY =====================
+  router.get('/database/status', async (req, res) => {
+    try {
+      if (!db) return res.status(404).json({ error: 'Database not initialized' });
+      const status = await db.getHealthStatus();
+      res.json(status);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/database/backup', async (req, res) => {
+    try {
+      if (!db) return res.status(404).json({ error: 'Database not initialized' });
+      const backupResult = await db.createSnapshotBackup();
+      res.json(backupResult);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/database/verify', async (req, res) => {
+    try {
+      if (!db) return res.status(404).json({ error: 'Database not initialized' });
+      const report = await db.verifyIntegrity();
+      res.json(report);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

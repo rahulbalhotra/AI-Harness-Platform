@@ -17,3 +17,9 @@ outut_teet.txt
 
 # Temp media storage
 .tempmediaStorage/
+
+# Database backups and temp files
+server/src/data/backups/
+*.bak
+*.tmp
+

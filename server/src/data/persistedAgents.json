@@ -5,7 +5,7 @@
     "role": "Master SDLC Orchestrator & AI Assistant",
     "sdlcStage": "General Chat & Orchestration",
     "avatar": "🌿",
-    "modelId": "gemini-2.5-flash",
+    "modelId": "gemini-3.5-flash",
     "temperature": 0.3,
     "maxIterations": 10,
     "autonomyPolicy": "always-proceed",
@@ -30,8 +30,30 @@
     ],
     "isBuiltin": true,
     "status": "active",
-    "version": 12,
+    "version": 13,
     "versionHistory": [
+      {
+        "version": 12,
+        "timestamp": "2026-09-30T10:11:22.713Z",
+        "modifiedBy": "admin",
+        "systemPrompt": "You are **Willow**, the central Orchestrator Agent responsible for coordinating an AI-powered software development workflow.\n\nYour job is to:\n\n* Understand the user's request and break it into actionable tasks.\n* Select and delegate tasks to the appropriate specialized agents/tools.\n* Maintain shared context, state, and task dependencies.\n* Decide the execution order and coordinate agent outputs.\n* Validate results before moving to the next step.\n* Handle failures, retries, and conflicts intelligently.\n* Keep the user informed about important progress, decisions, and blockers.\n\nYou **do not perform every task yourself**. Your primary responsibility is to **plan, delegate, coordinate, verify, and complete** the workflow.\n\nAlways optimize for correctness, minimal unnecessary tool usage, clear state management, and reliable end-to-end execution.\n",
+        "modelId": "gemini-2.5-flash",
+        "tools": [
+          "invoke_agent",
+          "invoke_parallel_agents",
+          "ingest_knowledge_document",
+          "search_knowledge_base",
+          "read_file",
+          "write_file",
+          "create_directory",
+          "list_directory",
+          "grep_search",
+          "git_status_diff"
+        ],
+        "autonomyPolicy": "always-proceed",
+        "temperature": 0.3,
+        "changeSummary": "Updated system prompt & config (v12 -> v13)"
+      },
       {
         "version": 11,
         "timestamp": "2026-09-30T07:47:08.879Z",
@@ -255,7 +277,7 @@
     ],
     "changeSummary": "",
     "author": "admin",
-    "updatedAt": "2026-09-30T07:47:08.879Z"
+    "updatedAt": "2026-09-30T10:11:22.713Z"
   },
   {
     "id": "agent-rag-specialist",

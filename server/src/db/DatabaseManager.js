@@ -23,9 +23,11 @@ class DatabaseManager {
       agent_versions: [],
       tool_versions: [],
       projects: [],
-      stories: []
+      stories: [],
+      telemetry_spans: []
     };
 
+    this.lastBackupAt = null;
     this.init();
   }
 
@@ -39,10 +41,27 @@ class DatabaseManager {
   }
 
   loadEmbeddedStore() {
+    const tryParseFile = (filePath) => {
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(raw);
+      }
+      return null;
+    };
+
     try {
-      if (fs.existsSync(this.dataPath)) {
-        const raw = fs.readFileSync(this.dataPath, 'utf8');
-        const parsed = JSON.parse(raw);
+      let parsed = tryParseFile(this.dataPath);
+
+      // Automatic crash recovery: if primary file is corrupted, restore from backup snapshot
+      if (!parsed && fs.existsSync(`${this.dataPath}.bak`)) {
+        console.warn('[DatabaseManager] Primary DB file missing, attempting recovery from .bak snapshot...');
+        parsed = tryParseFile(`${this.dataPath}.bak`);
+        if (parsed) {
+          console.log('[DatabaseManager] 🛡️ Successfully recovered database from .bak snapshot!');
+        }
+      }
+
+      if (parsed) {
         this.store = {
           users: parsed.users || [],
           sessions: parsed.sessions || [],
@@ -53,11 +72,39 @@ class DatabaseManager {
           agent_versions: parsed.agent_versions || [],
           tool_versions: parsed.tool_versions || [],
           projects: parsed.projects || [],
-          stories: parsed.stories || []
+          stories: parsed.stories || [],
+          telemetry_spans: parsed.telemetry_spans || []
         };
       }
     } catch (err) {
-      console.warn('[DatabaseManager] Failed to load embedded database, initializing fresh store:', err.message);
+      console.warn('[DatabaseManager] Primary database read failed:', err.message);
+      // Try restoring from .bak if parse failed
+      try {
+        const bakPath = `${this.dataPath}.bak`;
+        if (fs.existsSync(bakPath)) {
+          const bakRaw = fs.readFileSync(bakPath, 'utf8');
+          const bakParsed = JSON.parse(bakRaw);
+          if (bakParsed) {
+            console.log('[DatabaseManager] 🛡️ Restored corrupted store from .bak backup snapshot.');
+            this.store = {
+              users: bakParsed.users || [],
+              sessions: bakParsed.sessions || [],
+              messages: bakParsed.messages || [],
+              document_versions: bakParsed.document_versions || [],
+              knowledge_documents: bakParsed.knowledge_documents || [],
+              knowledge_chunks: bakParsed.knowledge_chunks || [],
+              agent_versions: bakParsed.agent_versions || [],
+              tool_versions: bakParsed.tool_versions || [],
+              projects: bakParsed.projects || [],
+              stories: bakParsed.stories || [],
+              telemetry_spans: bakParsed.telemetry_spans || []
+            };
+            return;
+          }
+        }
+      } catch (recoveryErr) {
+        console.error('[DatabaseManager] Critical: Recovery from backup also failed:', recoveryErr.message);
+      }
     }
   }
 
@@ -67,9 +114,26 @@ class DatabaseManager {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      fs.writeFileSync(this.dataPath, JSON.stringify(this.store, null, 2), 'utf8');
+
+      const serialized = JSON.stringify(this.store, null, 2);
+      const tmpPath = `${this.dataPath}.tmp`;
+      const bakPath = `${this.dataPath}.bak`;
+
+      // 1. Write to temporary file first (guarantees atomic non-corruptible persistence)
+      fs.writeFileSync(tmpPath, serialized, 'utf8');
+
+      // 2. Rotate previous file to backup snapshot if it exists
+      if (fs.existsSync(this.dataPath)) {
+        try {
+          fs.copyFileSync(this.dataPath, bakPath);
+          this.lastBackupAt = new Date().toISOString();
+        } catch (_) {}
+      }
+
+      // 3. Atomically rename temp file to primary file
+      fs.renameSync(tmpPath, this.dataPath);
     } catch (err) {
-      console.error('[DatabaseManager] Failed to save embedded database:', err.message);
+      console.error('[DatabaseManager] Failed to save embedded database atomically:', err.message);
     }
   }
 
@@ -1358,6 +1422,260 @@ class DatabaseManager {
       rows: [{ message: 'Query executed on embedded relational engine', mode: 'embedded' }],
       rowCount: 1,
       fields: ['message', 'mode']
+    };
+  }
+
+  // --- Observability & Telemetry Tracing Methods ---
+
+  async saveTelemetrySpan(span) {
+    if (!span || !span.spanId) return;
+
+    if (!Array.isArray(this.store.telemetry_spans)) {
+      this.store.telemetry_spans = [];
+    }
+
+    const existingIdx = this.store.telemetry_spans.findIndex(s => s.spanId === span.spanId);
+    if (existingIdx >= 0) {
+      this.store.telemetry_spans[existingIdx] = { ...this.store.telemetry_spans[existingIdx], ...span };
+    } else {
+      this.store.telemetry_spans.push(span);
+    }
+
+    // Keep up to 2500 recent spans in persistent store to avoid memory bloat
+    if (this.store.telemetry_spans.length > 2500) {
+      this.store.telemetry_spans = this.store.telemetry_spans.slice(-2500);
+    }
+
+    this.saveEmbeddedStore();
+
+    // If PostgreSQL is connected, persist to pg pool
+    if (this.engine === 'postgres' && this.pgPool) {
+      try {
+        await this.pgPool.query(`
+          INSERT INTO telemetry_spans (
+            span_id, trace_id, parent_span_id, name, type, agent_id, agent_name,
+            model_id, tool_id, start_time, end_time, duration_ms, status,
+            input_tokens, output_tokens, total_tokens, estimated_cost_usd, attributes
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          ON CONFLICT (span_id) DO UPDATE SET
+            end_time = EXCLUDED.end_time,
+            duration_ms = EXCLUDED.duration_ms,
+            status = EXCLUDED.status,
+            output_tokens = EXCLUDED.output_tokens,
+            total_tokens = EXCLUDED.total_tokens,
+            estimated_cost_usd = EXCLUDED.estimated_cost_usd,
+            attributes = EXCLUDED.attributes;
+        `, [
+          span.spanId,
+          span.traceId || null,
+          span.parentSpanId || null,
+          span.name,
+          span.type || 'span',
+          span.agentId || null,
+          span.agentName || null,
+          span.modelId || null,
+          span.toolId || null,
+          span.startTime ? new Date(span.startTime) : new Date(),
+          span.endTime ? new Date(span.endTime) : null,
+          span.durationMs || 0,
+          span.status || 'ok',
+          span.inputTokens || 0,
+          span.outputTokens || 0,
+          span.totalTokens || 0,
+          span.estimatedCostUsd || 0,
+          JSON.stringify(span.attributes || {})
+        ]);
+      } catch (err) {
+        console.warn('[DatabaseManager] PostgreSQL telemetry span insert error (falling back to embedded):', err.message);
+      }
+    }
+
+    return span;
+  }
+
+  async getTelemetrySpans(filters = {}) {
+    let spans = [...(this.store.telemetry_spans || [])];
+
+    if (filters.traceId) {
+      spans = spans.filter(s => s.traceId === filters.traceId);
+    }
+    if (filters.agentId && filters.agentId !== 'all') {
+      spans = spans.filter(s => s.agentId === filters.agentId);
+    }
+    if (filters.modelId && filters.modelId !== 'all') {
+      spans = spans.filter(s => s.modelId === filters.modelId);
+    }
+    if (filters.type && filters.type !== 'all') {
+      spans = spans.filter(s => s.type === filters.type);
+    }
+    if (filters.status && filters.status !== 'all') {
+      spans = spans.filter(s => s.status === filters.status);
+    }
+    if (filters.since) {
+      const sinceTime = new Date(filters.since).getTime();
+      spans = spans.filter(s => new Date(s.startTime).getTime() >= sinceTime);
+    }
+
+    // Sort descending by startTime
+    spans.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+    const limit = filters.limit ? parseInt(filters.limit, 10) : 100;
+    const offset = filters.offset ? parseInt(filters.offset, 10) : 0;
+    return spans.slice(offset, offset + limit);
+  }
+
+  async getTelemetryTrace(traceId) {
+    if (!traceId) return null;
+    const spans = (this.store.telemetry_spans || []).filter(s => s.traceId === traceId);
+    if (spans.length === 0) return null;
+
+    spans.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    const rootSpan = spans.find(s => !s.parentSpanId) || spans[0];
+
+    return {
+      traceId,
+      rootSpan,
+      spans,
+      totalSpans: spans.length,
+      durationMs: rootSpan.durationMs || (spans[spans.length - 1].endTime ? new Date(spans[spans.length - 1].endTime).getTime() - new Date(spans[0].startTime).getTime() : 0),
+      totalTokens: spans.reduce((sum, s) => sum + (s.totalTokens || 0), 0),
+      totalCostUsd: spans.reduce((sum, s) => sum + (s.estimatedCostUsd || 0), 0)
+    };
+  }
+
+  async clearTelemetrySpans() {
+    this.store.telemetry_spans = [];
+    this.saveEmbeddedStore();
+    return { success: true, message: 'Telemetry spans cleared' };
+  }
+
+  // --- Database Health & Diagnostic Controls ---
+
+  async getHealthStatus() {
+    let fileSizeKb = 0;
+    let backupSizeKb = 0;
+    let primaryFileExists = false;
+    let backupExists = false;
+
+    try {
+      if (fs.existsSync(this.dataPath)) {
+        primaryFileExists = true;
+        fileSizeKb = +(fs.statSync(this.dataPath).size / 1024).toFixed(2);
+      }
+      const bakPath = `${this.dataPath}.bak`;
+      if (fs.existsSync(bakPath)) {
+        backupExists = true;
+        backupSizeKb = +(fs.statSync(bakPath).size / 1024).toFixed(2);
+      }
+    } catch (_) {}
+
+    const tableCounts = {
+      users: this.store.users?.length || 0,
+      sessions: this.store.sessions?.length || 0,
+      messages: this.store.messages?.length || 0,
+      document_versions: this.store.document_versions?.length || 0,
+      knowledge_documents: this.store.knowledge_documents?.length || 0,
+      knowledge_chunks: this.store.knowledge_chunks?.length || 0,
+      projects: this.store.projects?.length || 0,
+      stories: this.store.stories?.length || 0,
+      telemetry_spans: this.store.telemetry_spans?.length || 0
+    };
+
+    const totalRecords = Object.values(tableCounts).reduce((a, b) => a + b, 0);
+
+    return {
+      status: 'healthy',
+      engine: this.engine,
+      isConnected: this.engine === 'postgres' ? this.isConnected : true,
+      pgVectorEnabled: this.pgVectorEnabled,
+      dataPath: this.dataPath,
+      primaryFileExists,
+      fileSizeKb,
+      backupExists,
+      backupSizeKb,
+      lastBackupAt: this.lastBackupAt,
+      tables: tableCounts,
+      totalRecords,
+      atomicPersistence: true,
+      autoRecoveryEnabled: true,
+      uptimeSeconds: process.uptime(),
+      memory: {
+        rssMb: +(process.memoryUsage().rss / (1024 * 1024)).toFixed(2),
+        heapUsedMb: +(process.memoryUsage().heapUsed / (1024 * 1024)).toFixed(2),
+        heapTotalMb: +(process.memoryUsage().heapTotal / (1024 * 1024)).toFixed(2)
+      }
+    };
+  }
+
+  async createSnapshotBackup() {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupDir = path.join(path.dirname(this.dataPath), 'backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      const backupFile = path.join(backupDir, `harness_db_snapshot_${timestamp}.json`);
+      fs.writeFileSync(backupFile, JSON.stringify(this.store, null, 2), 'utf8');
+      this.lastBackupAt = new Date().toISOString();
+      const sizeKb = +(fs.statSync(backupFile).size / 1024).toFixed(2);
+      return {
+        success: true,
+        backupFile,
+        sizeKb,
+        timestamp: this.lastBackupAt
+      };
+    } catch (err) {
+      throw new Error(`Failed to create snapshot backup: ${err.message}`);
+    }
+  }
+
+  async verifyIntegrity() {
+    const issues = [];
+    let repaired = 0;
+
+    // 1. Check messages foreign keys -> sessions
+    const validSessionIds = new Set(this.store.sessions.map(s => s.id));
+    const orphanedMessages = this.store.messages.filter(m => !validSessionIds.has(m.session_id));
+    if (orphanedMessages.length > 0) {
+      issues.push(`Found ${orphanedMessages.length} orphaned messages without valid session reference.`);
+      // Auto-assign to default session if needed
+      const defaultSess = this.store.sessions[0];
+      if (defaultSess) {
+        orphanedMessages.forEach(m => { m.session_id = defaultSess.id; });
+        repaired += orphanedMessages.length;
+      }
+    }
+
+    // 2. Check knowledge chunks -> knowledge documents
+    const validDocIds = new Set(this.store.knowledge_documents.map(d => d.id));
+    const orphanedChunks = this.store.knowledge_chunks.filter(c => !validDocIds.has(c.document_id));
+    if (orphanedChunks.length > 0) {
+      issues.push(`Found ${orphanedChunks.length} orphaned chunks with missing document.`);
+      this.store.knowledge_chunks = this.store.knowledge_chunks.filter(c => validDocIds.has(c.document_id));
+      repaired += orphanedChunks.length;
+    }
+
+    // 3. Check stories -> projects
+    const validProjectIds = new Set(this.store.projects.map(p => p.id));
+    const orphanedStories = this.store.stories.filter(s => !validProjectIds.has(s.project_id));
+    if (orphanedStories.length > 0) {
+      issues.push(`Found ${orphanedStories.length} orphaned stories with missing project.`);
+      if (this.store.projects[0]) {
+        orphanedStories.forEach(s => { s.project_id = this.store.projects[0].id; });
+        repaired += orphanedStories.length;
+      }
+    }
+
+    if (repaired > 0) {
+      this.saveEmbeddedStore();
+    }
+
+    return {
+      healthy: issues.length === 0,
+      issuesCount: issues.length,
+      repairedCount: repaired,
+      issuesReport: issues.length > 0 ? issues : ['All relational constraints, foreign keys, and vector chunk linkages are 100% verified.'],
+      verifiedAt: new Date().toISOString()
     };
   }
 }

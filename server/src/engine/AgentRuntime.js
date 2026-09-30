@@ -16,6 +16,7 @@ class AgentRuntime extends EventEmitter {
     this.sessions = new Map(); // sessionId -> { id, title, agentId, createdAt, updatedAt, messageCount }
     
     this.projectManager = null;
+    this.telemetryEngine = null;
 
     if (this.db) {
       this.syncFromDb();
@@ -27,6 +28,10 @@ class AgentRuntime extends EventEmitter {
 
   setProjectManager(projectManager) {
     this.projectManager = projectManager;
+  }
+
+  setTelemetryEngine(telemetryEngine) {
+    this.telemetryEngine = telemetryEngine;
   }
 
   async syncFromDb() {
@@ -242,11 +247,30 @@ class AgentRuntime extends EventEmitter {
 
     this.activeExecutions.set(executionId, execution);
 
+    // Distributed Telemetry Tracing
+    if (this.telemetryEngine) {
+      try {
+        const { traceId } = this.telemetryEngine.startTrace({
+          traceId: executionId,
+          sessionId,
+          agentId,
+          agentName: agent.name,
+          modelId: resolvedModel?.id || agent.modelId,
+          name: `SDLC Turn: ${agent.name}`,
+          attributes: { userPrompt: userPrompt.substring(0, 200) }
+        });
+        execution.traceId = traceId;
+      } catch (tErr) {
+        console.warn('[AgentRuntime] Telemetry startTrace error:', tErr.message);
+      }
+    }
+
     // Auto-RAG Knowledge Base Context & Citation Retrieval (pgvector)
     let ragContext = null;
     let ragCitations = [];
     if (this.knowledgeBaseManager) {
       try {
+        const ragStartTime = Date.now();
         const retrieved = await this.knowledgeBaseManager.retrieveWithCitations(userPrompt);
         ragContext = retrieved.contextText;
         ragCitations = retrieved.citations || [];
@@ -258,6 +282,16 @@ class AgentRuntime extends EventEmitter {
             citations: ragCitations,
             preview: ragContext.substring(0, 160) + '...'
           });
+
+          if (this.telemetryEngine && execution.traceId) {
+            this.telemetryEngine.recordRagRetrieval({
+              traceId: execution.traceId,
+              query: userPrompt,
+              chunkCount: ragCitations.length,
+              durationMs: Date.now() - ragStartTime,
+              citations: ragCitations
+            }).catch(() => {});
+          }
         }
       } catch (err) {
         console.warn('[AgentRuntime] RAG retrieval error:', err.message);

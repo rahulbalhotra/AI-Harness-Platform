@@ -14,6 +14,7 @@ import KnowledgeBaseHub from './components/KnowledgeBaseHub';
 import DatabaseVersioningHub from './components/DatabaseVersioningHub';
 import UserLoginModal from './components/UserLoginModal';
 import ProjectManagementHub from './components/ProjectManagementHub';
+import ObservabilityHub from './components/ObservabilityHub';
 
 import { 
   getAgents, 
@@ -310,6 +311,13 @@ export default function App() {
                 activeAgentId={activeAgentId}
                 currentUser={currentUser}
                 isConnected={isConnected}
+              />
+            )}
+
+            {activeTab === 'observability' && (
+              <ObservabilityHub
+                currentUser={currentUser}
+                activeAgentId={activeAgentId}
               />
             )}
 

@@ -713,3 +713,72 @@ export async function generateStories(projectId, prompt) {
   return await res.json();
 }
 
+// ===================== OBSERVABILITY & TELEMETRY =====================
+
+export async function getTelemetryOverview(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/telemetry/overview?${query}`);
+  if (!res.ok) throw new Error('Failed to fetch telemetry overview');
+  return await res.json();
+}
+
+export async function getTelemetryTraces(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/telemetry/traces?${query}`);
+  if (!res.ok) throw new Error('Failed to fetch telemetry traces');
+  return await res.json();
+}
+
+export async function getTraceDetail(traceId) {
+  const res = await fetch(`${API_BASE}/telemetry/traces/${traceId}`);
+  if (!res.ok) throw new Error('Failed to fetch trace details');
+  return await res.json();
+}
+
+export async function simulateTelemetryTraffic(count = 3) {
+  const res = await fetch(`${API_BASE}/telemetry/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count })
+  });
+  if (!res.ok) throw new Error('Failed to simulate telemetry traffic');
+  return await res.json();
+}
+
+export async function clearTelemetryTraces() {
+  const res = await fetch(`${API_BASE}/telemetry/traces`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) throw new Error('Failed to clear telemetry traces');
+  return await res.json();
+}
+
+export async function exportTelemetryData() {
+  window.open(`${API_BASE}/telemetry/export`, '_blank');
+}
+
+// ===================== DATABASE HEALTH & INTEGRITY =====================
+
+export async function getDatabaseHealth() {
+  const res = await fetch(`${API_BASE}/database/status`);
+  if (!res.ok) throw new Error('Failed to fetch database health');
+  return await res.json();
+}
+
+export async function createDatabaseBackup() {
+  const res = await fetch(`${API_BASE}/database/backup`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error('Failed to create snapshot backup');
+  return await res.json();
+}
+
+export async function verifyDatabaseIntegrity() {
+  const res = await fetch(`${API_BASE}/database/verify`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error('Failed to verify database integrity');
+  return await res.json();
+}
+
+

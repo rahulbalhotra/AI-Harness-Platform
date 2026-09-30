@@ -64,6 +64,10 @@ const ProjectManager = require('./engine/ProjectManager');
 const projectManager = new ProjectManager(db, toolRegistry);
 agentRuntime.setProjectManager(projectManager);
 
+const TelemetryEngine = require('./engine/TelemetryEngine');
+const telemetryEngine = new TelemetryEngine(db, broadcast);
+agentRuntime.setTelemetryEngine(telemetryEngine);
+
 // Auto-seed default workspace documents into RAG on startup
 setTimeout(async () => {
   try {
@@ -97,7 +101,8 @@ app.use('/api', apiRoutes(
   broadcast,
   db,
   knowledgeBaseManager,
-  projectManager
+  projectManager,
+  telemetryEngine
 ));
 
 // Serve static frontend build if present
@@ -150,9 +155,20 @@ agentRuntime.on('execution_resumed', (data) => broadcast('EXECUTION_RESUMED', da
 agentRuntime.on('rag_context_injected', (data) => broadcast('RAG_CONTEXT_INJECTED', data));
 agentRuntime.on('knowledge_doc_ingested', (data) => broadcast('KNOWLEDGE_DOC_INGESTED', data));
 agentRuntime.on('model_routed', (data) => broadcast('MODEL_ROUTED', data));
-agentRuntime.on('model_retry', (data) => broadcast('MODEL_RETRY', data));
-agentRuntime.on('execution_completed', (data) => broadcast('EXECUTION_COMPLETED', data));
-agentRuntime.on('execution_failed', (data) => broadcast('EXECUTION_FAILED', data));
+agentRuntime.on('execution_completed', (data) => {
+  broadcast('EXECUTION_COMPLETED', data);
+  if (data?.traceId) {
+    telemetryEngine.endTrace(data.traceId, { status: 'completed' }).catch(() => {});
+  }
+});
+agentRuntime.on('execution_failed', (data) => {
+  broadcast('EXECUTION_FAILED', data);
+  if (data?.traceId) {
+    telemetryEngine.endTrace(data.traceId, { status: 'error', errorMessage: data.error }).catch(() => {});
+  }
+});
+
+telemetryEngine.on('span', (span) => broadcast('TELEMETRY_SPAN', span));
 
 sdlcOrchestrator.on('pipeline_started', (data) => broadcast('PIPELINE_STARTED', data));
 sdlcOrchestrator.on('stage_started', (data) => broadcast('STAGE_STARTED', data));
