@@ -92,6 +92,20 @@ export default function App() {
   const [routingStatus, setRoutingStatus] = useState(null);
   const [lastRetryEvent, setLastRetryEvent] = useState(null);
 
+  // Day / Night Theme Mode ('dark' | 'light')
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('harness_theme') || 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('harness_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   // Current User & Access Control State
   const [currentUser, setCurrentUser] = useState({
     id: 'u_admin',
@@ -273,6 +287,8 @@ export default function App() {
           pendingApprovalsCount={pendingApprovals.length}
           currentUser={currentUser}
           onOpenLoginModal={() => setIsLoginModalOpen(true)}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
         {/* Center Main Stage Panel */}
@@ -384,6 +400,8 @@ export default function App() {
         onOpenGovernance={() => setActiveTab('governance')}
         currentUser={currentUser}
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       {/* Global Approval Modal */}

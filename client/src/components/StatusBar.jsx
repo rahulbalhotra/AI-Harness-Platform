@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Cpu, Activity, FolderGit2, CheckCircle2, AlertTriangle, Layers, RefreshCw } from 'lucide-react';
+import { Shield, Cpu, Activity, FolderGit2, CheckCircle2, AlertTriangle, Layers, RefreshCw, Sun, Moon } from 'lucide-react';
 
 export default function StatusBar({ 
   isConnected, 
@@ -16,7 +16,9 @@ export default function StatusBar({
   sessionTokens = 0,
   onOpenGovernance,
   currentUser = null,
-  onOpenLoginModal = () => {}
+  onOpenLoginModal = () => {},
+  theme = 'dark',
+  onToggleTheme = () => {}
 }) {
   const selectedMode = routingStatus?.selectedMode || 'auto';
   const displayModelName = activeModel?.name || activeModel?.id || 'Gemini 2.5 Flash';
@@ -202,6 +204,35 @@ export default function StatusBar({
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <Layers size={12} />
           <span>{sessionTokens.toLocaleString()} tokens</span>
+        </div>
+
+        {/* Day / Night Theme Toggle */}
+        <div
+          onClick={onToggleTheme}
+          title={theme === 'dark' ? 'Switch to Day Mode (Capgemini Clean Light)' : 'Switch to Night Mode (Capgemini Midnight Navy)'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            cursor: 'pointer',
+            padding: '1px 8px',
+            borderRadius: '4px',
+            background: theme === 'dark' ? 'rgba(0, 163, 224, 0.1)' : 'rgba(0, 112, 173, 0.12)',
+            color: theme === 'dark' ? '#fcd34d' : '#0070ad',
+            border: '1px solid var(--border-subtle)',
+            fontSize: '11px',
+            fontWeight: 600,
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'var(--accent-cyan)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          }}
+        >
+          {theme === 'dark' ? <Sun size={12} color="#fcd34d" /> : <Moon size={12} color="#0070ad" />}
+          <span>{theme === 'dark' ? 'Night Mode' : 'Day Mode'}</span>
         </div>
 
         {/* Antigravity version */}

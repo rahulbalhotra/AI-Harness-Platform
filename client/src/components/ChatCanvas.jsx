@@ -558,7 +558,7 @@ export default function ChatCanvas({
         <aside style={{
           width: '260px',
           minWidth: '260px',
-          backgroundColor: 'rgba(13, 17, 26, 0.95)',
+          backgroundColor: 'var(--bg-secondary)',
           borderRight: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
@@ -573,7 +573,7 @@ export default function ChatCanvas({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+            borderBottom: '1px solid var(--border-subtle)'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Sparkles size={16} color="var(--accent-cyan)" />

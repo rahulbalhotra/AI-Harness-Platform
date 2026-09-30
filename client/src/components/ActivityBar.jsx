@@ -12,7 +12,9 @@ import {
   BookOpen, 
   Database,
   Kanban,
-  Activity
+  Activity,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 export default function ActivityBar({ 
@@ -20,7 +22,9 @@ export default function ActivityBar({
   setActiveTab, 
   pendingApprovalsCount = 0,
   currentUser = null,
-  onOpenLoginModal = () => {}
+  onOpenLoginModal = () => {},
+  theme = 'dark',
+  onToggleTheme = () => {}
 }) {
   const navItems = [
     { id: 'chat', label: 'Agent Studio & Pair Chat', icon: MessageSquare },
@@ -156,7 +160,39 @@ export default function ActivityBar({
       </div>
 
       {/* Bottom Settings & User Login Logo */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+        {/* Day / Night Theme Switch Button */}
+        <button
+          onClick={onToggleTheme}
+          title={theme === 'dark' ? 'Switch to Day Mode (Capgemini Clean Light)' : 'Switch to Night Mode (Capgemini Midnight Navy)'}
+          style={{
+            position: 'relative',
+            width: '40px',
+            height: '40px',
+            borderRadius: '10px',
+            border: '1px solid var(--border-subtle)',
+            background: theme === 'dark' ? 'rgba(0, 163, 224, 0.08)' : 'rgba(0, 112, 173, 0.1)',
+            color: theme === 'dark' ? '#fcd34d' : '#0070ad',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            outline: 'none',
+            transition: 'all 0.2s ease',
+            boxShadow: theme === 'dark' ? '0 0 10px rgba(245, 158, 11, 0.15)' : '0 2px 8px rgba(0, 112, 173, 0.15)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.08)';
+            e.currentTarget.style.borderColor = 'var(--accent-cyan)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          }}
+        >
+          {theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
+        </button>
+
         <button
           onClick={onOpenLoginModal}
           title={`User Login & Policy Enforcement Access (${currentUser?.username || 'admin'} - ${currentUser?.role || 'admin'})`}

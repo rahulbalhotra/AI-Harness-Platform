@@ -36,6 +36,115 @@
   --font-mono: 'Fira Code', monospace;
 }
 
+/* ================= CAPGEMINI DAY MODE (LIGHT THEME) ================= */
+[data-theme="light"] {
+  --bg-primary: #f4f6fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #eaeff5;
+  --bg-card: rgba(255, 255, 255, 0.94);
+  --bg-hover: rgba(0, 112, 173, 0.08);
+
+  --border-subtle: rgba(0, 112, 173, 0.16);
+  --border-active: rgba(0, 112, 173, 0.55);
+  --border-focus: #0070ad;
+
+  --capgemini-blue: #0070ad;
+  --capgemini-cyan: #0098d6;
+  --capgemini-raspberry: #eb214e;
+  --capgemini-dark-teal: #082438;
+
+  --accent-blue: #0070ad;
+  --accent-cyan: #0098d6;
+  --accent-indigo: #0070ad;
+  --accent-purple: #007ab8;
+  --accent-rose: #eb214e;
+  --accent-raspberry: #eb214e;
+  --accent-emerald: #059669;
+  --accent-amber: #d97706;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+}
+
+[data-theme="light"] .glass-panel {
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 112, 173, 0.15);
+  box-shadow: 0 4px 18px rgba(0, 60, 100, 0.06);
+}
+
+[data-theme="light"] .glass-panel-elevated {
+  background: #ffffff;
+  border: 1px solid rgba(0, 112, 173, 0.24);
+  box-shadow: 0 12px 32px rgba(0, 60, 100, 0.1);
+}
+
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background: #ffffff;
+  border: 1px solid rgba(0, 112, 173, 0.22);
+  color: #0f172a;
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(0, 152, 214, 0.25);
+}
+
+[data-theme="light"] .btn-secondary {
+  background: rgba(0, 112, 173, 0.07);
+  color: #0f172a;
+  border: 1px solid rgba(0, 112, 173, 0.2);
+}
+
+[data-theme="light"] .btn-secondary:hover {
+  background: rgba(0, 112, 173, 0.14);
+  border-color: rgba(0, 112, 173, 0.35);
+}
+
+[data-theme="light"] .badge-indigo,
+[data-theme="light"] .badge-blue {
+  background: rgba(0, 112, 173, 0.12);
+  color: #005a8e;
+  border: 1px solid rgba(0, 112, 173, 0.32);
+}
+
+[data-theme="light"] .badge-cyan {
+  background: rgba(0, 152, 214, 0.12);
+  color: #006e9c;
+  border: 1px solid rgba(0, 152, 214, 0.32);
+}
+
+[data-theme="light"] .badge-rose,
+[data-theme="light"] .badge-raspberry {
+  background: rgba(235, 33, 78, 0.12);
+  color: #ba1238;
+  border: 1px solid rgba(235, 33, 78, 0.32);
+}
+
+[data-theme="light"] .badge-emerald {
+  background: rgba(5, 150, 105, 0.12);
+  color: #046c4e;
+  border: 1px solid rgba(5, 150, 105, 0.32);
+}
+
+[data-theme="light"] .badge-amber {
+  background: rgba(217, 119, 6, 0.12);
+  color: #9a4a06;
+  border: 1px solid rgba(217, 119, 6, 0.32);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 112, 173, 0.25);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 112, 173, 0.45);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
